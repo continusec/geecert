@@ -1,0 +1,47 @@
+##### SERVER CONFIGURATION
+
+# Path to the SSH CA private key, e.g. ssh-keygen -t rsa -b 4096 -C "My CA" -N "" -f /path/to/ssh-ca
+ca_key_path: "/pat/to/ssh-ca"
+
+# Port to listen for gRPC requests on (HTTP/2).
+listen_port: 10000
+
+# TLS cert / key to use, e.g. openssl req -x509 -newkey rsa:4096 -keyout /path/to/grpc-key.pem -out /path/to/grpc-cert.pem -days 3600 -nodes -subj '/CN=localhost' -batch
+server_cert_path: "/path/to/grpc-key.pem"
+server_key_path: "/path/to/grpc-cert.pem"
+
+
+##### ID TOKEN VALIDATION
+
+# Hosted domain allowed for ID token validation
+allowed_domain_for_id_token: "yourdomain.com"
+
+# Allowed client ID registered with Google: https://console.developers.google.com/
+allowed_client_id_for_id_token: "xxxxxxxxxx.apps.googleusercontent.com"
+
+
+##### CERTIFICATE GENERATION OPTIONS
+
+# TTL for each certificate. Since certs are not revokable, keep short.
+generate_cert_duration_seconds: 86400
+
+# Hosts to apply configuration to for clients
+client_config_scope: "*.yourdomain.com"
+
+# Create an entry for each allowed user, where the key is the email address
+# as validated by the Google ID token.
+allowed_users: <
+    key: "username@yourdomain.com"
+    value: <
+        username: "foo"
+        extra_principals: ["root"]
+        cert_permissions: <key: "permit-pty">
+    >
+>
+allowed_users: <
+    key: "otheruser@yourdomain.com"
+    value: <
+        username: "bar"
+        cert_permissions: <key: "permit-pty">
+    >
+>
