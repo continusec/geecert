@@ -1,7 +1,7 @@
 ##### SERVER CONFIGURATION
 
 # Path to the SSH CA private key, e.g. ssh-keygen -t rsa -b 4096 -C "My CA" -N "" -f /path/to/ssh-ca
-ca_key_path: "/pat/to/ssh-ca"
+ca_key_path: "/path/to/ssh-ca"
 
 # Port to listen for gRPC requests on (HTTP/2).
 listen_port: 10000
