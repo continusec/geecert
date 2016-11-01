@@ -95,17 +95,23 @@ func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*p
 		Status:      pb.ResponseCode_OK,
 		Certificate: fmt.Sprintf("ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(cert), email),
 		CertificateAuthorities: []string{
-			fmt.Sprintf("@cert-authority %s ssh-rsa %s GEECERTCA", s.Config.ClientConfigScope, base64.StdEncoding.EncodeToString(ourCAPubKey.Marshal())),
+			fmt.Sprintf("@cert-authority %s ssh-rsa %s %s", s.Config.ClientConfigScope, base64.StdEncoding.EncodeToString(ourCAPubKey.Marshal()), s.Config.CaComment),
 		},
-		Config: []string{
+		Config: augmentWithIndented([]string{
 			"Host " + s.Config.ClientConfigScope,
-			"    Port 10011",
 			"    User " + userConf.Username,
 			"    IdentityFile $CERTNAME", // client to replace
 			"    IdentitiesOnly yes",
 			"    PasswordAuthentication no",
-		},
+		}, s.Config.AdditionalSshConfigurationLine, "    "),
 	}, nil
+}
+
+func augmentWithIndented(base []string, additional []string, indent string) []string {
+	for _, line := range additional {
+		base = append(base, indent+line)
+	}
+	return base
 }
 
 func LoadPrivateKeyFromPEM(path string) (*rsa.PrivateKey, error) {

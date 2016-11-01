@@ -20,13 +20,21 @@ allowed_domain_for_id_token: "yourdomain.com"
 allowed_client_id_for_id_token: "xxxxxxxxxx.apps.googleusercontent.com"
 
 
+##### GENERATED SSH CONFIG OPTIONS
+
+# Hosts to apply configuration to for clients
+client_config_scope: "*.yourdomain.com"
+
+# Appears as comment in the known_hosts
+ca_comment: "ORGNAME-CA"
+
+# Zero or more, applies to the client_config_scope in the generated config file
+additional_ssh_configuration_line: "Port 10011"
+
 ##### CERTIFICATE GENERATION OPTIONS
 
 # TTL for each certificate. Since certs are not revokable, keep short.
 generate_cert_duration_seconds: 86400
-
-# Hosts to apply configuration to for clients
-client_config_scope: "*.yourdomain.com"
 
 # Create an entry for each allowed user, where the key is the email address
 # as validated by the Google ID token.

@@ -16,7 +16,7 @@ limitations under the License.
 
 */
 
-package main
+package geecert
 
 import (
 	"bytes"
@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -45,7 +44,6 @@ import (
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/pkg/browser"
 
-	"github.com/continusec/geecert"
 	pb "github.com/continusec/geecert/sso"
 
 	"golang.org/x/crypto/ssh"
@@ -58,52 +56,39 @@ import (
 )
 
 const (
-	// Used for pre-check validation
-	HostedDomain = "yourdomain.com"
-
-	// Client ID is managed in this Google: https://console.developers.google.com/
-	ClientID = "xxxxxxx.apps.googleusercontent.com"
-
-	// Note, despite the name, this is not really a secret nor intended to be.
-	ClientSecret = "yyyyyyyy"
-)
-
-const (
 	AuthURI  = "https://accounts.google.com/o/oauth2/auth"
 	TokenURI = "https://accounts.google.com/o/oauth2/token"
 	CertURL  = "https://www.googleapis.com/oauth2/v1/certs"
 
 	RedirectOOB       = "urn:ietf:wg:oauth:2.0:oob"
 	RedirectLocalhost = "http://localhost"
-
-	CredentialCache = ".geecerttoken"
 )
 
-const (
-	DefaultCertPem = `-----BEGIN CERTIFICATE-----
-your server TLS certificate
------END CERTIFICATE-----
-`
+type ClientAppConfiguration struct {
+	HostedDomain       string // Matches against field in Google response. Should be your domain name.
+	ClientID           string // Client ID as configured with Google: https://console.developers.google.com/
+	ClientNotSoSecret  string // Client "Secret" corresponding to the Client ID. Note, despite the name, this is not really a secret nor intended to be.
+	GRPCPEMCertificate string // If set, Self-signed GRPC server certificate, else GRPCPEMCertificatePath is used
+	GRPCServer         string // server:host
+	CredentialFileName string // e.g. .geecerttoken
 
-	DefaultServer = "sso.yourserver.com:10000"
-)
+	GRPCPEMCertificatePath string // If set, path to PEM for server certificate
+
+	OverrideMachinePolicy bool // If true, override machine policy such as requiring FDE
+	OverrideGrpcSecurity  bool // If true, allow insecure connection to gRPC server
+	UseSystemCaForCert    bool // If true, use a system CA instead of self-signed certificate
+
+	ShortlivedKeyName string // e.g. id_orgname_shortlived_rsa
+	SectionIdentifier string // e.g. ORGNAME-CA
+}
 
 var (
-	ErrUserDenied     = errors.New("User clicked deny.")
-	ErrInvalidIDToken = errors.New("ErrInvalidIDToken")
-)
-
-var (
-	OverrideMachinePolicy = false
-	OverrideGrpcSecurity  = false
-	UseSystemCaFromCert   = false
-	ServerHostPort        = ""
-	ServerCertificatePath = ""
+	ErrUserDenied = errors.New("User clicked deny.")
 )
 
 // Try to launch a browser, redirect to local server etc etc
 // Return code, redirect URI, error
-func DoBrowserDance() (string, string, error) {
+func DoBrowserDance(config *ClientAppConfiguration) (string, string, error) {
 	// Find a free port number
 	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
 	if err != nil {
@@ -133,7 +118,7 @@ func DoBrowserDance() (string, string, error) {
 		"scope":         {"email"},
 		"redirect_uri":  {redir},
 		"response_type": {"code"},
-		"client_id":     {ClientID},
+		"client_id":     {config.ClientID},
 	}.Encode()
 
 	err = browser.OpenURL(urlToVisit)
@@ -177,13 +162,13 @@ func DoBrowserDance() (string, string, error) {
 	return code, redir, nil
 }
 
-func DoOOBDance() (string, string, error) {
+func DoOOBDance(config *ClientAppConfiguration) (string, string, error) {
 	// Send the user there
 	urlToVisit := AuthURI + "?" + url.Values{
 		"scope":         {"email"},
 		"redirect_uri":  {RedirectOOB},
 		"response_type": {"code"},
-		"client_id":     {ClientID},
+		"client_id":     {config.ClientID},
 	}.Encode()
 
 	fmt.Printf("Please visit (in your browser):\n%s\n\nAnd then paste the code received here: ", urlToVisit)
@@ -200,14 +185,14 @@ func DoOOBDance() (string, string, error) {
 	return code, RedirectOOB, nil
 }
 
-func SwapCodeForTokens(code, redir string) (*CachedCreds, error) {
+func SwapCodeForTokens(config *ClientAppConfiguration, code, redir string) (*CachedCreds, error) {
 	log.Print("Exchanging authorization code for long-lived credentials.")
 
 	// Now we have an authorization code, exchange this for the good stuff
 	resp, err := http.PostForm(TokenURI, url.Values{
 		"code":          {code},
-		"client_id":     {ClientID},
-		"client_secret": {ClientSecret},
+		"client_id":     {config.ClientID},
+		"client_secret": {config.ClientNotSoSecret},
 		"redirect_uri":  {redir},
 		"grant_type":    {"authorization_code"},
 	})
@@ -238,14 +223,14 @@ func SwapCodeForTokens(code, redir string) (*CachedCreds, error) {
 	return &creds, nil
 }
 
-func SwapRefreshForTokens(refreshToken string) (*CachedCreds, error) {
+func SwapRefreshForTokens(config *ClientAppConfiguration, refreshToken string) (*CachedCreds, error) {
 	log.Print("Sending refresh token for short-lived credentials.")
 
 	// Now we have an authorization code, exchange this for the good stuff
 	resp, err := http.PostForm(TokenURI, url.Values{
 		"refresh_token": {refreshToken},
-		"client_id":     {ClientID},
-		"client_secret": {ClientSecret},
+		"client_id":     {config.ClientID},
+		"client_secret": {config.ClientNotSoSecret},
 		"grant_type":    {"refresh_token"},
 	})
 	if err != nil {
@@ -287,24 +272,24 @@ type CachedCreds struct {
 }
 
 // Prompt user to
-func Reauthorize(path string) error {
+func Reauthorize(config *ClientAppConfiguration, path string) error {
 	// First try the browser dance as it's easier for the user
-	code, redir, err := DoBrowserDance()
+	code, redir, err := DoBrowserDance(config)
 	switch err {
 	case nil:
 		// yay, pass!
 	case ErrUserDenied:
 		return err
 	default:
-		// Fall back to OOB dane
-		code, redir, err = DoOOBDance()
+		// Fall back to OOB dance
+		code, redir, err = DoOOBDance(config)
 	}
 	if err != nil {
 		return err
 	}
 
 	// Swap authorization code for tokens
-	creds, err := SwapCodeForTokens(code, redir)
+	creds, err := SwapCodeForTokens(config, code, redir)
 	if err != nil {
 		return err
 	}
@@ -349,7 +334,7 @@ func SaveCreds(path string, creds *CachedCreds) error {
 	return nil
 }
 
-func FetchCerts(idToken string, sshDir string) error {
+func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string) error {
 	log.Println("Generating new private key.")
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -364,28 +349,28 @@ func FetchCerts(idToken string, sshDir string) error {
 
 	// Get certs
 	var dialOptions []grpc.DialOption
-	if OverrideGrpcSecurity {
+	if config.OverrideGrpcSecurity {
 		// use system CA pool but disable cert validation
 		log.Println("WARNING: Disabling TLS authentication when connecting to SSO gRPC server")
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})))
-	} else if len(ServerCertificatePath) > 0 {
-		tc, err := credentials.NewClientTLSFromFile(ServerCertificatePath, "")
+	} else if len(config.GRPCPEMCertificatePath) > 0 {
+		tc, err := credentials.NewClientTLSFromFile(config.GRPCPEMCertificatePath, "")
 		if err != nil {
 			return err
 		}
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(tc))
-	} else if UseSystemCaFromCert {
+	} else if config.UseSystemCaForCert {
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{}))) // uses the system CA pool
 	} else {
 		// use baked in cert
 		cp := x509.NewCertPool()
-		if !cp.AppendCertsFromPEM([]byte(DefaultCertPem)) {
+		if !cp.AppendCertsFromPEM([]byte(config.GRPCPEMCertificate)) {
 			return errors.New("Unable to undertand baked-in cert.")
 		}
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: cp})))
 	}
 
-	conn, err := grpc.Dial(ServerHostPort, dialOptions...)
+	conn, err := grpc.Dial(config.GRPCServer, dialOptions...)
 	if err != nil {
 		return err
 	}
@@ -422,7 +407,7 @@ func FetchCerts(idToken string, sshDir string) error {
 	}
 
 	log.Println("Writing new private key.")
-	err = SafeSave(filepath.Join(sshDir, "id_geecert_shortlived_rsa"), pem.EncodeToMemory(
+	err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName), pem.EncodeToMemory(
 		&pem.Block{
 			Type:  "RSA PRIVATE KEY",
 			Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
@@ -434,19 +419,19 @@ func FetchCerts(idToken string, sshDir string) error {
 
 	// And public key too, not that it should be needed in theory, but SSH moans if it isn't there.
 	// Works in openssh 6.9. Broken in 7.2. Patch has been submitted to openssh team.
-	err = SafeSave(filepath.Join(sshDir, "id_geecert_shortlived_rsa.pub"), []byte("ssh-rsa "+ourPubKeyString+" ignorethiscomment\n"), 0644)
+	err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName+".pub"), []byte("ssh-rsa "+ourPubKeyString+" ignorethiscomment\n"), 0644)
 	if err != nil {
 		return err
 	}
 
-	log.Println("Installing new certificate. For more info, run: ssh-keygen -Lf ~/.ssh/id_geecert_shortlived_rsa-cert.pub")
-	err = SafeSave(filepath.Join(sshDir, "id_geecert_shortlived_rsa-cert.pub"), []byte(resp.Certificate), 0644)
+	log.Println("Installing new certificate. For more info, run: ssh-keygen -Lf ~/.ssh/" + config.ShortlivedKeyName + "-cert.pub")
+	err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName+"-cert.pub"), []byte(resp.Certificate), 0644)
 	if err != nil {
 		return err
 	}
 
 	// Update known hosts
-	err = ReplaceSectionOfFile("GEECERT-CA", filepath.Join(sshDir, "known_hosts"), resp.CertificateAuthorities, 0644, "Updating known_hosts certificate authorities.")
+	err = ReplaceSectionOfFile(config.SectionIdentifier, filepath.Join(sshDir, "known_hosts"), resp.CertificateAuthorities, 0644, "Updating known_hosts certificate authorities.")
 	if err != nil {
 		return err
 	}
@@ -454,9 +439,9 @@ func FetchCerts(idToken string, sshDir string) error {
 	// Update SSH config
 	cnf := make([]string, len(resp.Config))
 	for i, line := range resp.Config {
-		cnf[i] = strings.Replace(line, "$CERTNAME", filepath.Join(sshDir, "id_geecert_shortlived_rsa"), -1)
+		cnf[i] = strings.Replace(line, "$CERTNAME", filepath.Join(sshDir, config.ShortlivedKeyName), -1)
 	}
-	err = ReplaceSectionOfFile("GEECERT-CA", filepath.Join(sshDir, "config"), cnf, 0644, "Updating ssh config file to use certificates.")
+	err = ReplaceSectionOfFile(config.SectionIdentifier, filepath.Join(sshDir, "config"), cnf, 0644, "Updating ssh config file to use certificates.")
 	if err != nil {
 		return err
 	}
@@ -546,9 +531,8 @@ func SafeSave(path string, contents []byte, perm os.FileMode) error {
 
 // We can use this to soft-enforce only giving certificates out if reasonable precautions
 // are in place in the client device, e.g. enforce full disk encryption with machine passcode.
-func ValidateMachineIsSuitable() error {
-	// TODO: remove ability to do the following
-	if OverrideMachinePolicy {
+func ValidateMachineIsSuitable(config *ClientAppConfiguration) error {
+	if config.OverrideMachinePolicy {
 		log.Println("WARNING: Overriding machine policy.")
 		return nil
 	}
@@ -572,58 +556,53 @@ func ValidateMachineIsSuitable() error {
 	}
 }
 
-func main() {
-	flag.StringVar(&ServerHostPort, "server", DefaultServer, "Address:port of the server to connect to")
-	flag.StringVar(&ServerCertificatePath, "server_cert", "", "Certificate expected from the server for TLS, overrides default in binary")
-	flag.BoolVar(&OverrideMachinePolicy, "override_machine_policy", false, "Please don't use this.")
-	flag.BoolVar(&OverrideGrpcSecurity, "allow_insecure_connect_to_sso_server", false, "Please don't use this.")
-	flag.BoolVar(&UseSystemCaFromCert, "server_cert_from_real_ca", false, "Use system CA for server cert.")
-	flag.Parse()
-
-	err := ValidateMachineIsSuitable()
+func ProcessClient(config *ClientAppConfiguration) error {
+	err := ValidateMachineIsSuitable(config)
 	if err != nil {
-		log.Fatal("Error:", err)
+		return err
 	}
 
 	hd, err := homedir.Dir()
 	if err != nil {
-		log.Fatal("Error:", err)
+		return err
 	}
-	path := filepath.Join(hd, CredentialCache)
+	path := filepath.Join(hd, config.CredentialFileName)
 
 	// First, try to load creds, and if we have none, go ahead and authorize us
 	creds, err := LoadCreds(path)
 	if err != nil {
-		err = Reauthorize(path)
+		err = Reauthorize(config, path)
 		if err != nil {
-			log.Fatal("Error:", err)
+			return err
 		}
 		creds, err = LoadCreds(path)
 		if err != nil {
-			log.Fatal("Error:", err)
+			return err
 		}
 	}
 
 	// Now that we have creds, try to get a valid ID token refreshing if needed
-	email, err := geecert.ValidateIDToken(creds.IDToken, ClientID, HostedDomain)
+	email, err := ValidateIDToken(creds.IDToken, config.ClientID, config.HostedDomain)
 	if err != nil {
-		creds, err = SwapRefreshForTokens(creds.RefreshToken)
+		creds, err = SwapRefreshForTokens(config, creds.RefreshToken)
 		if err != nil {
-			log.Fatal("Error:", err)
+			return err
 		}
 		err = SaveCreds(path, creds)
 		if err != nil {
-			log.Fatal("Error:", err)
+			return err
 		}
-		email, err = geecert.ValidateIDToken(creds.IDToken, ClientID, HostedDomain)
+		email, err = ValidateIDToken(creds.IDToken, config.ClientID, config.HostedDomain)
 		if err != nil {
-			log.Fatal("Error:", err)
+			return err
 		}
 	}
 
 	log.Print("Have valid ID token for:", email)
-	err = FetchCerts(creds.IDToken, filepath.Join(hd, ".ssh"))
+	err = FetchCerts(config, creds.IDToken, filepath.Join(hd, ".ssh"))
 	if err != nil {
-		log.Fatal("Error:", err)
+		return err
 	}
+
+	return nil
 }

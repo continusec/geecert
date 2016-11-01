@@ -57,4 +57,7 @@ message ServerConfig {
     
     string server_cert_path = 8;
     string server_key_path = 9;
+    
+    repeated string additional_ssh_configuration_line = 10;
+    string ca_comment = 11;
 }

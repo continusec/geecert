@@ -2,6 +2,13 @@
 
 The following provides an end-to-end SSO solution that allows using Google Apps sign-in (where things like 2-factor can be enforced) to allow SSH access to your hosts using the standard SSH command line tools.
 
+## Deployment
+
+The server is expected to be built and and run 'as-is', as its configuration is controlled by a configuration file, described below.
+
+For the client we expect your server administrator (probably you!) to build a custom binary that comes pre-baked with your organizations configuration, by copying the sample harness, replacing with your configuration values, and building a binary that you distribute to your users.
+
+
 ## Building from source
 
 Both client and server are written in Go, primarily because there are good crypto libraries for Go, and Go makes it easy to build and distribute a single static binary with no dependencies.
@@ -21,16 +28,16 @@ Fetch source and build both the client and the server (the `...` is not a typo),
 
 Verify binaries are built:
 
-    ls -l $GOPATH/bin
+    ls $GOPATH/bin
 
 Shows:
 
-    -rwxr-xr-x 1 adam users 12769648 Oct 18 17:21 geecert
-    -rwxr-xr-x 1 adam users 12352336 Oct 18 17:21 servegeecerts
+    geecertsample
+    servegeecerts
 
 ### Developer notes
 
-If you make any changes to `ssoproto/sso.proto`, run the following to re-generate new Go code (assumes that [protoc](https://github.com/google/protobuf/releases) is installed):
+If you make any changes to `sso.proto`, run the following to re-generate new Go code (assumes that [protoc](https://github.com/google/protobuf/releases) is installed):
 
     cd $GOPATH/src/github.com/continusec/geecert
     protoc -I. sso.proto --go_out=plugins=grpc:sso
@@ -40,6 +47,7 @@ To build and install new server and client after changing Go source, run:
     go install github.com/continusec/geecert/cmd/...
 
 ## SSO Server
+
 The SSO Server can be built from source assuming a working `golang` install. It does however compile to a single statically linked binary, so once built that binary can be distributed to another machine without needing anything else.
 
 
@@ -59,22 +67,64 @@ If all is good, you should see:
 
 Now, go build and run a client to use.
 
-## `geecert` client tool
+## `geecertsample` client tool
+
+For the client we expect your server administrator (probably you!) to build a custom binary that comes pre-baked with your organizations configuration, by copying the sample harness, replacing with your configuration values, and building a binary that you distribute to your users.
+
+To do so, first make sure the source code is available:
+
+    go get -github.com/continusec/geecert
+
+And, then in your project, e.g. in `$GOPATH/src/github.com/you/ssotool/cmd/getmycerts/main.go`:
+
+
+	package main
+	
+	import (
+		"flag"
+		"log"
+	
+		"github.com/continusec/geecert"
+	)
+	
+	var LocalConfiguration = geecert.ClientAppConfiguration{
+		HostedDomain: "orgname.com",
+		ClientID: "xxxxxxx.apps.googleusercontent.com",
+		ClientNotSoSecret: "yyyyyyy",
+		GRPCPEMCertificate: `-----BEGIN CERTIFICATE-----
+	...
+	-----END CERTIFICATE-----
+	`,
+		CredentialFileName: ".orgnamesso",
+		ShortlivedKeyName:  "id_orgname_shortlived_rsa",
+		SectionIdentifier:  "ORGNAME-CA",
+	
+		// Other fields are specified via defaults in flags below
+	}
+	
+	func main() {
+		flag.StringVar(&LocalConfiguration.GRPCServer, "server", "sso.orgname.com:10000", "Address:port of the server to connect to")
+		flag.StringVar(&LocalConfiguration.GRPCPEMCertificatePath, "server_cert", "", "Certificate expected from the server for TLS, overrides default in binary")
+		flag.BoolVar(&LocalConfiguration.OverrideMachinePolicy, "override_machine_policy", false, "Please don't use this.")
+		flag.BoolVar(&LocalConfiguration.OverrideGrpcSecurity, "allow_insecure_connect_to_sso_server", false, "Please don't use this.")
+		flag.BoolVar(&LocalConfiguration.UseSystemCaForCert, "server_cert_from_real_ca", false, "Use system CA for server cert.")
+		flag.Parse()
+	
+		err := geecert.ProcessClient(&LocalConfiguration)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+Or similar. Then build it:
+
+    go install github.com/you/ssotool/cmd/getmycerts
+
+And run:
+
+    getmycerts
 
 (Note, this is intended to be run from an end-client workstation, e.g. your laptop, rather than an intermediate server)
-
-Simply run (with correct server / port):
-
-    geecert --server hostwhereserveris:10000
-    
-And, if self-signed certificate was used above:
-
-    geecert --server hostwhereserveris:10000 --server_cert my-cert.pem
-    
-or, to disable cert checking (bad): 
-
-    geecert --server hostwhereserveris:10000 --allow_insecure_connect_to_sso_server
-
 
 The first time this is run, it will perform an OAuth 2.0 dance with Google to fetch long-lived credentials for your account. If you are running in a nice GUI environment it will launch a browser for you. Otherwise you'll be given a URL to copy/paste.
 
@@ -121,18 +171,18 @@ Consider backing up your `~/.ssh` before running the tool if concerned. Alternat
 # Troubleshooting
 
 ## "FileVault must be enabled" error
-`geecert` soft-enforces a minimum security profile that should be present on a workstation on in order to receive credentials to production systems. As such, when present on a Mac, if full disk encryption is not enabled, then `geecert` will not run (and other platforms to follow). The intention is to mitigate against theft of a device that contains credentials.
+The client soft-enforces a minimum security profile that should be present on a workstation on in order to receive credentials to production systems. As such, when present on a Mac, if full disk encryption is not enabled, then the client will not run (and other platforms to follow). The intention is to mitigate against theft of a device that contains credentials.
 
-The best way to fix this error is to enabled FileVault. Alternatively, re-run with `--override_machine_policy` although this may be disabled in the future.
+The best way to fix this error is to enabled FileVault. Alternatively, re-run with `--override_machine_policy` (if you choose to leave this option in your binary).
 
 ## Deleting cached credentials
 If there are errors coming back from the Google server such as `invalid_grant`, try removing the saved credentials and re-authorizing the application.
 
-    rm ~/.geecert
+    rm ~/.orgnamesso
     
 Then re-run the tool:
 
-    geecert
+    getmycerts
 
 ## Revoking access to Google account
 
@@ -144,4 +194,3 @@ And remove the application that matches your client ID. Note that since the ID T
 # Acknlowdgements
 
 The author gratefully acknlowledges the initial funding for development of this tool by [Androgogic Pty Ltd](http://www.androgogic.com/).
-
