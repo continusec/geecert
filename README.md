@@ -191,6 +191,6 @@ To revoke access to your Google account, visit:
 
 And remove the application that matches your client ID. Note that since the ID Tokens issued by Google are generally for 1 hour, they will continue to be accepted by the SSO server until they timeout.
 
-# Acknlowdgements
+# Acknowledgements
 
-The author gratefully acknlowledges the initial funding for development of this tool by [Androgogic Pty Ltd](http://www.androgogic.com/).
+The author gratefully acknowledges the initial funding for development of this tool by [Androgogic Pty Ltd](http://www.androgogic.com/).
