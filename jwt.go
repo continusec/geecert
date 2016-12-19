@@ -28,6 +28,8 @@ var (
 	ErrInvalidIDToken = errors.New("ErrInvalidIDToken")
 )
 
+// Validates a token, including that it matchines the client ID and hosted domain
+// Returns the email address and nil upon success
 func ValidateIDToken(idToken, clientID, hostedDomain string) (string, error) {
 	token, err := jwt.Parse(idToken, GoogleKeyFunc)
 	if err != nil {

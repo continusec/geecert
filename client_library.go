@@ -21,6 +21,7 @@ package geecert
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -83,7 +84,8 @@ type ClientAppConfiguration struct {
 }
 
 var (
-	ErrUserDenied = errors.New("User clicked deny.")
+	ErrUserDenied       = errors.New("User clicked deny.")
+	ErrWrongKeyFileType = errors.New("Wrong key file type.")
 )
 
 // Try to launch a browser, redirect to local server etc etc
@@ -554,6 +556,146 @@ func ValidateMachineIsSuitable(config *ClientAppConfiguration) error {
 		// for now, allow
 		return nil
 	}
+}
+
+/*
+   hd, err := homedir.Dir()
+   if err != nil {
+       return nil, err
+   }
+
+   sshDir := filepath.Join(hd, ".ssh")
+
+   keyPath := filepath.Join(sshDir, config.ShortlivedKeyName)
+
+   data, err := ioutil.ReadFile(keyPath)
+   if err != nil {
+       return nil, err
+   }
+
+   // Decode PEM
+   block, _ := pem.Decode(data)
+   if block == nil {
+       return nil, ErrWrongKeyFileType
+   }
+   if block.Type != "RSA PRIVATE KEY" {
+       return nil, ErrWrongKeyFileType
+   }
+
+   pkey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+   if err != nil {
+       return nil, err
+   }
+
+   sshPublicKey, err := ssh.NewPublicKey(pkey)
+   if err != nil {
+       return nil, err
+   }
+
+   certPath := filepath.Join(sshDir, config.ShortlivedKeyName + "-cert.pub")
+   certData, err := ioutil.ReadFile(certPath)
+   if err != nil {
+       return nil, err
+   }
+
+   sshCert, err := ssh.ParsePublicKey(certData)
+   if err != nil {
+       return nil, err
+   }
+
+   actCert, ok := sshCert.(*ssh.Certificate)
+   if !ok {
+       return nil, ErrWrongKeyFileType
+   }
+
+   cs, err := ss.NewCertSigner(actCert, sshPublicKey)
+   if err != nil {
+       return nil, err
+   }
+
+   return cs, nil
+
+
+*/
+
+func loadSigningKey(config *ClientAppConfiguration) (ssh.Signer, *ssh.Certificate, error) {
+	hd, err := homedir.Dir()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sshDir := filepath.Join(hd, ".ssh")
+
+	data, err := ioutil.ReadFile(filepath.Join(sshDir, config.ShortlivedKeyName))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sshPublicKey, err := ssh.ParsePrivateKey(data)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	certData, err := ioutil.ReadFile(filepath.Join(sshDir, config.ShortlivedKeyName+"-cert.pub"))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sshCert, _, _, _, err := ssh.ParseAuthorizedKey(certData)
+	if err != nil {
+		return nil, nil, err
+	}
+	actCert, ok := sshCert.(*ssh.Certificate)
+	if !ok {
+		return nil, nil, ErrWrongKeyFileType
+	}
+
+	cs, err := ssh.NewCertSigner(actCert, sshPublicKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return cs, actCert, nil
+}
+
+// Get a current set of certs, then use them to sign a payload (experimental)
+// Format is:
+// uint8 - format version. Version 0 is defined as:
+// uint64 - big endian cert length
+// certificate
+// uint64 - big endian sig length
+// signature
+func signData(config *ClientAppConfiguration, msg []byte) ([]byte, error) {
+	signer, cert, err := loadSigningKey(config)
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := signer.Sign(rand.Reader, msg)
+	if err != nil {
+		return nil, err
+	}
+
+	certData := cert.Marshal()
+	sigData := sig.Blob
+
+	var rv []byte
+
+	rv = append(rv, 0x00)
+
+	bb := make([]byte, 8)
+
+	binary.BigEndian.PutUint64(bb, uint64(len(certData)))
+	rv = append(rv, bb...)
+
+	rv = append(rv, certData...)
+
+	binary.BigEndian.PutUint64(bb, uint64(len(sigData)))
+	rv = append(rv, bb...)
+
+	rv = append(rv, sigData...)
+
+	return rv, nil
 }
 
 func ProcessClient(config *ClientAppConfiguration) error {
