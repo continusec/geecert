@@ -558,65 +558,6 @@ func ValidateMachineIsSuitable(config *ClientAppConfiguration) error {
 	}
 }
 
-/*
-   hd, err := homedir.Dir()
-   if err != nil {
-       return nil, err
-   }
-
-   sshDir := filepath.Join(hd, ".ssh")
-
-   keyPath := filepath.Join(sshDir, config.ShortlivedKeyName)
-
-   data, err := ioutil.ReadFile(keyPath)
-   if err != nil {
-       return nil, err
-   }
-
-   // Decode PEM
-   block, _ := pem.Decode(data)
-   if block == nil {
-       return nil, ErrWrongKeyFileType
-   }
-   if block.Type != "RSA PRIVATE KEY" {
-       return nil, ErrWrongKeyFileType
-   }
-
-   pkey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-   if err != nil {
-       return nil, err
-   }
-
-   sshPublicKey, err := ssh.NewPublicKey(pkey)
-   if err != nil {
-       return nil, err
-   }
-
-   certPath := filepath.Join(sshDir, config.ShortlivedKeyName + "-cert.pub")
-   certData, err := ioutil.ReadFile(certPath)
-   if err != nil {
-       return nil, err
-   }
-
-   sshCert, err := ssh.ParsePublicKey(certData)
-   if err != nil {
-       return nil, err
-   }
-
-   actCert, ok := sshCert.(*ssh.Certificate)
-   if !ok {
-       return nil, ErrWrongKeyFileType
-   }
-
-   cs, err := ss.NewCertSigner(actCert, sshPublicKey)
-   if err != nil {
-       return nil, err
-   }
-
-   return cs, nil
-
-
-*/
 
 func loadSigningKey(config *ClientAppConfiguration) (ssh.Signer, *ssh.Certificate, error) {
 	hd, err := homedir.Dir()
