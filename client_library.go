@@ -336,7 +336,11 @@ func SaveCreds(path string, creds *CachedCreds) error {
 	return nil
 }
 
-func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string) error {
+// sshDir is the absolute path
+// homePathToSSHDir is the path to use inside of a config file, this should contain a ~
+// rather than be absolute as it allows this .ssh dir to be mounted as a volume inside of Docker
+// and work well.
+func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, homePathToSSHDir string) error {
 	log.Println("Generating new private key.")
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -367,7 +371,7 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string) e
 		// use baked in cert
 		cp := x509.NewCertPool()
 		if !cp.AppendCertsFromPEM([]byte(config.GRPCPEMCertificate)) {
-			return errors.New("Unable to undertand baked-in cert.")
+			return errors.New("Unable to understand baked-in cert.")
 		}
 		dialOptions = append(dialOptions, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{RootCAs: cp})))
 	}
@@ -441,7 +445,7 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string) e
 	// Update SSH config
 	cnf := make([]string, len(resp.Config))
 	for i, line := range resp.Config {
-		cnf[i] = strings.Replace(line, "$CERTNAME", filepath.Join(sshDir, config.ShortlivedKeyName), -1)
+		cnf[i] = strings.Replace(line, "$CERTNAME", filepath.Join(homePathToSSHDir, config.ShortlivedKeyName), -1)
 	}
 	err = ReplaceSectionOfFile(config.SectionIdentifier, filepath.Join(sshDir, "config"), cnf, 0644, "Updating ssh config file to use certificates.")
 	if err != nil {
@@ -557,7 +561,6 @@ func ValidateMachineIsSuitable(config *ClientAppConfiguration) error {
 		return nil
 	}
 }
-
 
 func loadSigningKey(config *ClientAppConfiguration) (ssh.Signer, *ssh.Certificate, error) {
 	hd, err := homedir.Dir()
@@ -682,7 +685,7 @@ func ProcessClient(config *ClientAppConfiguration) error {
 	}
 
 	log.Print("Have valid ID token for:", email)
-	err = FetchCerts(config, creds.IDToken, filepath.Join(hd, ".ssh"))
+	err = FetchCerts(config, creds.IDToken, filepath.Join(hd, ".ssh"), filepath.Join("~", ".ssh"))
 	if err != nil {
 		return err
 	}
