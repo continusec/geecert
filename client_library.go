@@ -37,6 +37,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -642,6 +643,29 @@ func signData(config *ClientAppConfiguration, msg []byte) ([]byte, error) {
 	return rv, nil
 }
 
+func errIsClock(err error) bool {
+	return err != nil && err.Error() == "Token used before issued"
+}
+
+func validateTokenWithRetryForClock(idToken, clientID, hostedDomain string, retries int) (string, error) {
+	var rv string
+	var err error
+	for done, attempts := false, 0; !done; attempts++ {
+		rv, err = ValidateIDToken(idToken, clientID, hostedDomain)
+		if errIsClock(err) {
+			if attempts < retries {
+				log.Print("Token appears to have come from the future - retrying in 1 second.")
+				time.Sleep(time.Second)
+			} else {
+				done = true
+			}
+		} else {
+			done = true
+		}
+	}
+	return rv, err
+}
+
 func ProcessClient(config *ClientAppConfiguration) error {
 	err := ValidateMachineIsSuitable(config)
 	if err != nil {
@@ -668,7 +692,7 @@ func ProcessClient(config *ClientAppConfiguration) error {
 	}
 
 	// Now that we have creds, try to get a valid ID token refreshing if needed
-	email, err := ValidateIDToken(creds.IDToken, config.ClientID, config.HostedDomain)
+	email, err := validateTokenWithRetryForClock(creds.IDToken, config.ClientID, config.HostedDomain, 5)
 	if err != nil {
 		creds, err = SwapRefreshForTokens(config, creds.RefreshToken)
 		if err != nil {
@@ -678,13 +702,13 @@ func ProcessClient(config *ClientAppConfiguration) error {
 		if err != nil {
 			return err
 		}
-		email, err = ValidateIDToken(creds.IDToken, config.ClientID, config.HostedDomain)
+		email, err = validateTokenWithRetryForClock(creds.IDToken, config.ClientID, config.HostedDomain, 5)
 		if err != nil {
 			return err
 		}
 	}
 
-	log.Print("Have valid ID token for:", email)
+	log.Print("Have valid ID token for: ", email)
 	err = FetchCerts(config, creds.IDToken, filepath.Join(hd, ".ssh"), filepath.Join("~", ".ssh"))
 	if err != nil {
 		return err
