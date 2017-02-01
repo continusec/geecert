@@ -87,6 +87,7 @@ type ClientAppConfiguration struct {
 var (
 	ErrUserDenied       = errors.New("User clicked deny.")
 	ErrWrongKeyFileType = errors.New("Wrong key file type.")
+	ErrWrongCertType    = errors.New("Wrong cert file type.")
 )
 
 // Try to launch a browser, redirect to local server etc etc
@@ -464,7 +465,7 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, h
 		}
 		cert, ok := pk.(*ssh.Certificate)
 		if !ok {
-			return err
+			return ErrWrongCertType
 		}
 		ttl := int64(cert.ValidBefore) - time.Now().Unix()
 		log.Printf("Certificate will be added with TTL of %d seconds.\n", ttl)
