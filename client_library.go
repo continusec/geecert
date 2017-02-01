@@ -1,6 +1,6 @@
 /*
 
-Copyright 2016 Continusec Pty Ltd
+Copyright 2017 Continusec Pty Ltd
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -451,6 +451,28 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, h
 	err = ReplaceSectionOfFile(config.SectionIdentifier, filepath.Join(sshDir, "config"), cnf, 0644, "Updating ssh config file to use certificates.")
 	if err != nil {
 		return err
+	}
+
+	// Check if ssh-agent is running, and if so, add our cert
+	authSock := os.Getenv("SSH_AUTH_SOCK")
+	if len(authSock) != 0 {
+		log.Println("SSH_AUTH_SOCK detected, adding certificate to ssh-agent.")
+		// Try to add our cert
+		pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(resp.Certificate))
+		if err != nil {
+			return err
+		}
+		cert, ok := pk.(*ssh.Certificate)
+		if !ok {
+			return err
+		}
+		ttl := int64(cert.ValidBefore) - time.Now().Unix()
+		log.Printf("Certificate will be added with TTL of %d seconds.\n", ttl)
+		err = exec.Command("ssh-add", "-t", strconv.FormatInt(ttl, 10), filepath.Join(sshDir, config.ShortlivedKeyName)).Run()
+		if err != nil {
+			log.Println("Error adding certificate to ss-agent.")
+			return err
+		}
 	}
 
 	return nil
