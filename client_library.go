@@ -49,6 +49,7 @@ import (
 	pb "github.com/continusec/geecert/sso"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	context "golang.org/x/net/context"
 
 	"crypto/rand"
@@ -469,9 +470,18 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, h
 		}
 		ttl := int64(cert.ValidBefore) - time.Now().Unix()
 		log.Printf("Certificate will be added with TTL of %d seconds.\n", ttl)
-		err = exec.Command("ssh-add", "-t", strconv.FormatInt(ttl, 10), filepath.Join(sshDir, config.ShortlivedKeyName)).Run()
+
+		agentSocket, err := net.Dial("unix", authSock)
 		if err != nil {
-			log.Println("Error adding certificate to ss-agent.")
+			return err
+		}
+		sshAgent := agent.NewClient(agentSocket)
+		err = sshAgent.Add(agent.AddedKey{
+			PrivateKey:   privateKey,
+			Certificate:  cert,
+			LifetimeSecs: uint32(ttl),
+		})
+		if err != nil {
 			return err
 		}
 	}
