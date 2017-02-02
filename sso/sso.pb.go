@@ -69,6 +69,20 @@ func (m *SSHCertsRequest) String() string            { return proto.CompactTextS
 func (*SSHCertsRequest) ProtoMessage()               {}
 func (*SSHCertsRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
+func (m *SSHCertsRequest) GetIdToken() string {
+	if m != nil {
+		return m.IdToken
+	}
+	return ""
+}
+
+func (m *SSHCertsRequest) GetPublicKey() string {
+	if m != nil {
+		return m.PublicKey
+	}
+	return ""
+}
+
 type SSHCertsResponse struct {
 	Status                 ResponseCode `protobuf:"varint,1,opt,name=status,enum=ResponseCode" json:"status,omitempty"`
 	Certificate            string       `protobuf:"bytes,2,opt,name=certificate" json:"certificate,omitempty"`
@@ -80,6 +94,34 @@ func (m *SSHCertsResponse) Reset()                    { *m = SSHCertsResponse{} 
 func (m *SSHCertsResponse) String() string            { return proto.CompactTextString(m) }
 func (*SSHCertsResponse) ProtoMessage()               {}
 func (*SSHCertsResponse) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+
+func (m *SSHCertsResponse) GetStatus() ResponseCode {
+	if m != nil {
+		return m.Status
+	}
+	return ResponseCode_OK
+}
+
+func (m *SSHCertsResponse) GetCertificate() string {
+	if m != nil {
+		return m.Certificate
+	}
+	return ""
+}
+
+func (m *SSHCertsResponse) GetCertificateAuthorities() []string {
+	if m != nil {
+		return m.CertificateAuthorities
+	}
+	return nil
+}
+
+func (m *SSHCertsResponse) GetConfig() []string {
+	if m != nil {
+		return m.Config
+	}
+	return nil
+}
 
 type ServerConfig struct {
 	CaKeyPath                      string                              `protobuf:"bytes,1,opt,name=ca_key_path,json=caKeyPath" json:"ca_key_path,omitempty"`
@@ -100,11 +142,81 @@ func (m *ServerConfig) String() string            { return proto.CompactTextStri
 func (*ServerConfig) ProtoMessage()               {}
 func (*ServerConfig) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
 
+func (m *ServerConfig) GetCaKeyPath() string {
+	if m != nil {
+		return m.CaKeyPath
+	}
+	return ""
+}
+
+func (m *ServerConfig) GetGenerateCertDurationSeconds() int32 {
+	if m != nil {
+		return m.GenerateCertDurationSeconds
+	}
+	return 0
+}
+
+func (m *ServerConfig) GetClientConfigScope() string {
+	if m != nil {
+		return m.ClientConfigScope
+	}
+	return ""
+}
+
 func (m *ServerConfig) GetAllowedUsers() map[string]*ServerConfig_UserConfig {
 	if m != nil {
 		return m.AllowedUsers
 	}
 	return nil
+}
+
+func (m *ServerConfig) GetListenPort() int32 {
+	if m != nil {
+		return m.ListenPort
+	}
+	return 0
+}
+
+func (m *ServerConfig) GetAllowedDomainForIdToken() string {
+	if m != nil {
+		return m.AllowedDomainForIdToken
+	}
+	return ""
+}
+
+func (m *ServerConfig) GetAllowedClientIdForIdToken() string {
+	if m != nil {
+		return m.AllowedClientIdForIdToken
+	}
+	return ""
+}
+
+func (m *ServerConfig) GetServerCertPath() string {
+	if m != nil {
+		return m.ServerCertPath
+	}
+	return ""
+}
+
+func (m *ServerConfig) GetServerKeyPath() string {
+	if m != nil {
+		return m.ServerKeyPath
+	}
+	return ""
+}
+
+func (m *ServerConfig) GetAdditionalSshConfigurationLine() []string {
+	if m != nil {
+		return m.AdditionalSshConfigurationLine
+	}
+	return nil
+}
+
+func (m *ServerConfig) GetCaComment() string {
+	if m != nil {
+		return m.CaComment
+	}
+	return ""
 }
 
 type ServerConfig_UserConfig struct {
@@ -117,6 +229,20 @@ func (m *ServerConfig_UserConfig) Reset()                    { *m = ServerConfig
 func (m *ServerConfig_UserConfig) String() string            { return proto.CompactTextString(m) }
 func (*ServerConfig_UserConfig) ProtoMessage()               {}
 func (*ServerConfig_UserConfig) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2, 0} }
+
+func (m *ServerConfig_UserConfig) GetUsername() string {
+	if m != nil {
+		return m.Username
+	}
+	return ""
+}
+
+func (m *ServerConfig_UserConfig) GetExtraPrincipals() []string {
+	if m != nil {
+		return m.ExtraPrincipals
+	}
+	return nil
+}
 
 func (m *ServerConfig_UserConfig) GetCertPermissions() map[string]string {
 	if m != nil {
@@ -139,7 +265,7 @@ var _ grpc.ClientConn
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion3
+const _ = grpc.SupportPackageIsVersion4
 
 // Client API for GeeCertServer service
 
@@ -202,7 +328,7 @@ var _GeeCertServer_serviceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: fileDescriptor0,
+	Metadata: "sso.proto",
 }
 
 func init() { proto.RegisterFile("sso.proto", fileDescriptor0) }
