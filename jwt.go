@@ -20,6 +20,8 @@ package geecert
 
 import (
 	"errors"
+	"log"
+	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 )
@@ -28,65 +30,117 @@ var (
 	ErrInvalidIDToken = errors.New("ErrInvalidIDToken")
 )
 
+type IDTokenClaims struct {
+	EmailAddress string
+	FirstName    string
+	LastName     string
+}
+
+func errIsClock(err error) bool {
+	return err != nil && err.Error() == "Token used before issued"
+}
+
+func ValidateTokenWithRetryForClock(idToken, clientID, hostedDomain string, retries int) (*IDTokenClaims, error) {
+	var rv *IDTokenClaims
+	var err error
+	for done, attempts := false, 0; !done; attempts++ {
+		rv, err = ValidateIDToken(idToken, clientID, hostedDomain)
+		if errIsClock(err) {
+			if attempts < retries {
+				log.Print("Token appears to have come from the future - retrying in 1 second.")
+				time.Sleep(time.Second)
+			} else {
+				done = true
+			}
+		} else {
+			done = true
+		}
+	}
+	return rv, err
+}
+
 // Validates a token, including that it matchines the client ID and hosted domain
 // Returns the email address and nil upon success
-func ValidateIDToken(idToken, clientID, hostedDomain string) (string, error) {
+func ValidateIDToken(idToken, clientID, hostedDomain string) (*IDTokenClaims, error) {
 	token, err := jwt.Parse(idToken, GoogleKeyFunc)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if !token.Valid {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 
 	mapClaims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 	if !mapClaims.VerifyIssuer("accounts.google.com", true) {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 	if !mapClaims.VerifyAudience(clientID, true) {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 
 	// Check hosted domain
 	hd, ok := mapClaims["hd"]
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 	hds, ok := hd.(string)
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 	if hds != hostedDomain {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 
 	// Check email verified
 	ev, ok := mapClaims["email_verified"]
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 	evb, ok := ev.(bool)
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 	if !evb {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 
 	// Email
 	email, ok := mapClaims["email"]
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 
 	emails, ok := email.(string)
 	if !ok {
-		return "", ErrInvalidIDToken
+		return nil, ErrInvalidIDToken
 	}
 
-	return emails, nil
+	// Start setting up return value
+	rv := &IDTokenClaims{
+		EmailAddress: emails,
+	}
+
+	// Try to get first name, it's OK if it fails
+	firstName, ok := mapClaims["given_name"]
+	if ok {
+		nameAsString, ok := firstName.(string)
+		if ok {
+			rv.FirstName = nameAsString
+		}
+	}
+
+	// Try to get last name, it's OK if it fails
+	lastName, ok := mapClaims["family_name"]
+	if ok {
+		nameAsString, ok := lastName.(string)
+		if ok {
+			rv.LastName = nameAsString
+		}
+	}
+
+	return rv, nil
 }

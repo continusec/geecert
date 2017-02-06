@@ -52,12 +52,12 @@ type SSOServer struct {
 }
 
 func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*pb.SSHCertsResponse, error) {
-	email, err := geecert.ValidateIDToken(in.IdToken, s.Config.AllowedClientIdForIdToken, s.Config.AllowedDomainForIdToken)
+	idTokenClaims, err := geecert.ValidateIDToken(in.IdToken, s.Config.AllowedClientIdForIdToken, s.Config.AllowedDomainForIdToken)
 	if err != nil {
 		return nil, err
 	}
 
-	userConf, ok := s.Config.AllowedUsers[email]
+	userConf, ok := s.Config.AllowedUsers[idTokenClaims.EmailAddress]
 	if !ok {
 		return &pb.SSHCertsResponse{
 			Status: pb.ResponseCode_NO_CERTS_ALLOWED,
@@ -84,16 +84,16 @@ func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*p
 		return nil, err
 	}
 
-	cert, nva, err := CreateUserCertificate(append([]string{userConf.Username}, userConf.ExtraPrincipals...), email, keyToSign, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second, userConf.CertPermissions)
+	cert, nva, err := CreateUserCertificate(append([]string{userConf.Username}, userConf.ExtraPrincipals...), idTokenClaims.EmailAddress, keyToSign, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second, userConf.CertPermissions)
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("Issued certificate to %s valid until %s.\n", email, nva.Format(time.RFC3339))
+	log.Printf("Issued certificate to %s valid until %s.\n", idTokenClaims.EmailAddress, nva.Format(time.RFC3339))
 
 	return &pb.SSHCertsResponse{
 		Status:      pb.ResponseCode_OK,
-		Certificate: fmt.Sprintf("ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(cert), email),
+		Certificate: fmt.Sprintf("ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(cert), idTokenClaims.EmailAddress),
 		CertificateAuthorities: []string{
 			fmt.Sprintf("@cert-authority %s ssh-rsa %s %s", s.Config.ClientConfigScope, base64.StdEncoding.EncodeToString(ourCAPubKey.Marshal()), s.Config.CaComment),
 		},
