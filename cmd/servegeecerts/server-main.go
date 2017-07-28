@@ -73,13 +73,13 @@ func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 				return err
 			}
 
-			cert, nva, err := CreateHostCertificate(hostname, key, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second)
+			cert, nva, err := CreateHostCertificate(h, key, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second)
 			if err != nil {
 				return err
 			}
 			kt = key.Type()
 
-			log.Printf("Issued host certificate for %s valid until %s.\n", hostname, nva.Format(time.RFC3339))
+			log.Printf("Issued host certificate for %s valid until %s.\n", h, nva.Format(time.RFC3339))
 
 			certToReturn = cert
 			return errors.New("fail now please")
