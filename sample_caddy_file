@@ -1,0 +1,9 @@
+https://ssh.ca.example.com {
+  proxy / localhost:10001 {
+    header_downstream Strict-Transport-Security "max-age=31536000;"
+  }
+  tls {
+    ca https://acme-v01.api.letsencrypt.org/directory
+    protocols tls1.2
+  }
+}

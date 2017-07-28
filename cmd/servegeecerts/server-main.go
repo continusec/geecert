@@ -27,6 +27,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
@@ -44,11 +45,79 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 
+	"net/http"
+
+	"github.com/mholt/caddy"
 	"golang.org/x/crypto/ssh"
+
+	_ "github.com/mholt/caddy/caddyhttp"
 )
 
 type SSOServer struct {
 	Config *pb.ServerConfig
+}
+
+// Generate a host cert for whatever we see
+func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
+	var certToReturn []byte
+	var kt string
+
+	ssh.Dial("tcp", fmt.Sprintf("%s:%d", h, 22), &ssh.ClientConfig{
+		User: "ca",
+		Auth: []ssh.AuthMethod{
+			ssh.Password("wrongpassignoreme"),
+		},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			if key == nil {
+				return errors.New("no host key")
+			}
+			caKey, err := LoadPrivateKeyFromPEM(s.Config.CaKeyPath)
+			if err != nil {
+				return err
+			}
+
+			cert, nva, err := CreateHostCertificate(h, key, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second)
+			if err != nil {
+				return err
+			}
+			kt = key.Type()
+
+			log.Printf("Issued host certificate for %s valid until %s.\n", h, nva.Format(time.RFC3339))
+
+			certToReturn = cert
+			return errors.New("fail now please")
+		},
+	})
+
+	// Ignore error code for above, as we'll definitely fail due to no creds
+	if len(certToReturn) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	fmt.Fprintf(w, "%s-cert-v01@openssh.com %s %s\n", kt, base64.StdEncoding.EncodeToString(certToReturn), h)
+}
+
+func (s *SSOServer) issueHostCertificate(w http.ResponseWriter, r *http.Request) {
+	h := r.FormValue("host")
+	for _, m := range s.Config.AllowedHosts {
+		matched, err := filepath.Match(m, h)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if matched {
+			s.makeHostCert(w, h)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusBadRequest)
+	return
+}
+
+func (s *SSOServer) StartHTTP() {
+	http.HandleFunc("/hostCertificate", s.issueHostCertificate)
+	http.ListenAndServe(fmt.Sprintf("localhost:%d", s.Config.HttpListenPort), nil)
 }
 
 func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*pb.SSHCertsResponse, error) {
@@ -137,6 +206,28 @@ func LoadPrivateKeyFromPEM(path string) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
+func CreateHostCertificate(hostname string, keyToSign ssh.PublicKey, signingKey *rsa.PrivateKey, duration time.Duration) ([]byte, *time.Time, error) {
+	signer, err := ssh.NewSignerFromKey(signingKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	now := time.Now()
+	end := now.Add(duration)
+	cert := ssh.Certificate{
+		Key:             keyToSign,
+		CertType:        ssh.HostCert,
+		KeyId:           hostname,
+		ValidPrincipals: []string{hostname},
+		ValidAfter:      uint64(now.Unix()),
+		ValidBefore:     uint64(end.Unix()),
+	}
+	err = cert.SignCert(rand.Reader, signer)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cert.Marshal(), &end, nil
+}
+
 func CreateUserCertificate(usernames []string, emailAddress string, keyToSign ssh.PublicKey, signingKey *rsa.PrivateKey, duration time.Duration, perms map[string]string) ([]byte, *time.Time, error) {
 	signer, err := ssh.NewSignerFromKey(signingKey)
 	if err != nil {
@@ -178,6 +269,28 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var input caddy.Input
+	if conf.CaddyFilePath != "" {
+		caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(func(serverType string) (caddy.Input, error) {
+			contents, err := ioutil.ReadFile(conf.CaddyFilePath)
+			if err != nil {
+				return nil, err
+			}
+			return caddy.CaddyfileInput{
+				Contents:       contents,
+				Filepath:       conf.CaddyFilePath,
+				ServerTypeName: serverType,
+			}, nil
+		}))
+
+		caddy.AppName = "geecert server"
+		caddy.AppVersion = "0.1"
+		input, err = caddy.LoadCaddyfile("http")
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	tc, err := credentials.NewServerTLSFromFile(conf.ServerCertPath, conf.ServerKeyPath)
 	if err != nil {
 		log.Fatal(err)
@@ -189,8 +302,20 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(tc))
-	pb.RegisterGeeCertServerServer(grpcServer, &SSOServer{Config: conf})
+	sso := &SSOServer{Config: conf}
+	pb.RegisterGeeCertServerServer(grpcServer, sso)
 
 	log.Println("Serving...")
+	if conf.HttpListenPort != 0 {
+		go sso.StartHTTP()
+
+		if input != nil {
+			_, err := caddy.Start(input)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
 	grpcServer.Serve(lis)
 }

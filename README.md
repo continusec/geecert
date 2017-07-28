@@ -40,7 +40,7 @@ Shows:
 If you make any changes to `sso.proto`, run the following to re-generate new Go code (assumes that [protoc](https://github.com/google/protobuf/releases) is installed):
 
     cd $GOPATH/src/github.com/continusec/geecert
-    protoc -I. sso.proto --go_out=plugins=grpc:sso
+    go generate
 
 To build and install new server and client after changing Go source, run:
 
@@ -79,14 +79,14 @@ And, then in your project, e.g. in `$GOPATH/src/github.com/you/ssotool/cmd/getmy
 
 
 	package main
-	
+
 	import (
 		"flag"
 		"log"
-	
+
 		"github.com/continusec/geecert"
 	)
-	
+
 	var LocalConfiguration = geecert.ClientAppConfiguration{
 		HostedDomain: "orgname.com",
 		ClientID: "xxxxxxx.apps.googleusercontent.com",
@@ -98,10 +98,10 @@ And, then in your project, e.g. in `$GOPATH/src/github.com/you/ssotool/cmd/getmy
 		CredentialFileName: ".orgnamesso",
 		ShortlivedKeyName:  "id_orgname_shortlived_rsa",
 		SectionIdentifier:  "ORGNAME-CA",
-	
+
 		// Other fields are specified via defaults in flags below
 	}
-	
+
 	func main() {
 		flag.StringVar(&LocalConfiguration.GRPCServer, "server", "sso.orgname.com:10000", "Address:port of the server to connect to")
 		flag.StringVar(&LocalConfiguration.GRPCPEMCertificatePath, "server_cert", "", "Certificate expected from the server for TLS, overrides default in binary")
@@ -109,7 +109,7 @@ And, then in your project, e.g. in `$GOPATH/src/github.com/you/ssotool/cmd/getmy
 		flag.BoolVar(&LocalConfiguration.OverrideGrpcSecurity, "allow_insecure_connect_to_sso_server", false, "Please don't use this.")
 		flag.BoolVar(&LocalConfiguration.UseSystemCaForCert, "server_cert_from_real_ca", false, "Use system CA for server cert.")
 		flag.Parse()
-	
+
 		err := geecert.ProcessClient(&LocalConfiguration)
 		if err != nil {
 			log.Fatal(err)
@@ -166,7 +166,7 @@ Consider backing up your `~/.ssh` before running the tool if concerned. Alternat
     git init
     git add *
     git commit -a -m "Initial commit."
-    
+
 
 # Troubleshooting
 
@@ -179,7 +179,7 @@ The best way to fix this error is to enabled FileVault. Alternatively, re-run wi
 If there are errors coming back from the Google server such as `invalid_grant`, try removing the saved credentials and re-authorizing the application.
 
     rm ~/.orgnamesso
-    
+
 Then re-run the tool:
 
     getmycerts
