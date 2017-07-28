@@ -57,6 +57,7 @@ type SSOServer struct {
 // Generate a host cert for whatever we see
 func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 	var certToReturn []byte
+	var kt string
 
 	ssh.Dial("tcp", fmt.Sprintf("%s:%d", h, 22), &ssh.ClientConfig{
 		User: "ca",
@@ -76,6 +77,7 @@ func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 			if err != nil {
 				return err
 			}
+			kt = key.Type()
 
 			log.Printf("Issued host certificate for %s valid until %s.\n", hostname, nva.Format(time.RFC3339))
 
@@ -90,7 +92,7 @@ func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 		return
 	}
 
-	fmt.Fprintf(w, "ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(certToReturn), h)
+	fmt.Fprintf(w, "%s %s %s\n", kt, base64.StdEncoding.EncodeToString(certToReturn), h)
 }
 
 func (s *SSOServer) issueHostCertificate(w http.ResponseWriter, r *http.Request) {
