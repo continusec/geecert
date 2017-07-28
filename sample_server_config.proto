@@ -53,3 +53,6 @@ allowed_users: <
         cert_permissions: <key: "permit-pty">
     >
 >
+
+http_listen_port = 10001
+allowed_hosts: "*.yourdomain.com"
