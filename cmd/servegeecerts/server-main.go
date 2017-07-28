@@ -58,7 +58,7 @@ type SSOServer struct {
 func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 	var certToReturn []byte
 
-	ssh.Dial("tcp", fmt.Sprintf("%s:d", h, 22), &ssh.ClientConfig{
+	ssh.Dial("tcp", fmt.Sprintf("%s:%d", h, 22), &ssh.ClientConfig{
 		User: "ca",
 		Auth: []ssh.AuthMethod{
 			ssh.Password("wrongpassignoreme"),

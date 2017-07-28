@@ -54,5 +54,5 @@ allowed_users: <
     >
 >
 
-http_listen_port = 10001
+http_listen_port: 10001
 allowed_hosts: "*.yourdomain.com"
