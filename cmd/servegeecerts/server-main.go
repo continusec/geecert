@@ -90,7 +90,7 @@ func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 		return
 	}
 
-	w.Write(certToReturn)
+	fmt.Fprintf(w, "ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(certToReturn), h)
 }
 
 func (s *SSOServer) issueHostCertificate(w http.ResponseWriter, r *http.Request) {
