@@ -49,6 +49,8 @@ import (
 
 	"github.com/mholt/caddy"
 	"golang.org/x/crypto/ssh"
+
+	_ "github.com/mholt/caddy/caddyhttp"
 )
 
 type SSOServer struct {
@@ -269,9 +271,21 @@ func main() {
 
 	var input caddy.Input
 	if conf.CaddyFilePath != "" {
+		caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(func(serverType string) (caddy.Input, error) {
+			contents, err := ioutil.ReadFile(conf.CaddyFilePath)
+			if err != nil {
+				return nil, err
+			}
+			return caddy.CaddyfileInput{
+				Contents:       contents,
+				Filepath:       conf.CaddyFilePath,
+				ServerTypeName: serverType,
+			}, nil
+		}))
+
 		caddy.AppName = "geecert server"
 		caddy.AppVersion = "0.1"
-		input, err = caddy.LoadCaddyfile(conf.CaddyFilePath)
+		input, err = caddy.LoadCaddyfile("http")
 		if err != nil {
 			log.Fatal(err)
 		}
