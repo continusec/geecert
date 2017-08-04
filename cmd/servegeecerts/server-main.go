@@ -47,6 +47,7 @@ import (
 
 	"net/http"
 
+	"github.com/mholt/caddy"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -114,7 +115,7 @@ func (s *SSOServer) issueHostCertificate(w http.ResponseWriter, r *http.Request)
 
 func (s *SSOServer) StartHTTP() {
 	http.HandleFunc("/hostCertificate", s.issueHostCertificate)
-	http.ListenAndServe(fmt.Sprintf(":%d", s.Config.HttpListenPort), nil)
+	http.ListenAndServe(fmt.Sprintf("localhost:%d", s.Config.HttpListenPort), nil)
 }
 
 func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*pb.SSHCertsResponse, error) {
@@ -266,6 +267,16 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var input caddy.Input
+	if conf.CaddyFilePath != "" {
+		caddy.AppName = "geecert server"
+		caddy.AppVersion = "0.1"
+		input, err = caddy.LoadCaddyfile(conf.CaddyFilePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
 	tc, err := credentials.NewServerTLSFromFile(conf.ServerCertPath, conf.ServerKeyPath)
 	if err != nil {
 		log.Fatal(err)
@@ -283,6 +294,13 @@ func main() {
 	log.Println("Serving...")
 	if conf.HttpListenPort != 0 {
 		go sso.StartHTTP()
+
+		if input != nil {
+			_, err := caddy.Start(input)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
 
 	grpcServer.Serve(lis)

@@ -16,6 +16,8 @@ limitations under the License.
 
 */
 
+//go:generate protoc -I. sso.proto --go_out=plugins=grpc:sso
+
 package geecert
 
 import (

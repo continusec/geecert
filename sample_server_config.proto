@@ -56,3 +56,4 @@ allowed_users: <
 
 http_listen_port: 10001
 allowed_hosts: "*.yourdomain.com"
+caddy_file_path: "/path/to/sample_caddy_file"
