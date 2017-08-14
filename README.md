@@ -6,29 +6,33 @@ The following provides an end-to-end SSO solution that allows using Google Apps 
 
 The server is expected to be built and and run 'as-is', as its configuration is controlled by a configuration file, described below.
 
-For the client we expect your server administrator (probably you!) to build a custom binary that comes pre-baked with your organizations configuration, by copying the sample harness, replacing with your configuration values, and building a binary that you distribute to your users.
-
+For the client we expect your server administrator to build a custom binary that comes pre-baked with your organizations configuration, by copying the sample harness, replacing with your configuration values, and building a binary that you distribute to your users.
 
 ## Building from source
 
-Both client and server are written in Go, primarily because there are good crypto libraries for Go, and Go makes it easy to build and distribute a single static binary with no dependencies.
+Both client and server are written in Go. Amongst other things, an advantage of writing this in Go means that it is easy to build and distribute a single static binary with no dependencies which is useful for distributing client login tool within your organization.
 
 First, install go <https://golang.org/dl/> and set an appropriate `GOPATH` in your profile, for example:
 
-    cat >> ~/.bash_profile <<EOF
-    export GOPATH=$HOME/go
-    export PATH=$GOPATH/bin:$PATH
-    EOF
-    source ~/.bash_profile
-
+```bash
+cat >> ~/.bash_profile <<EOF
+export GOPATH=$HOME/go
+export PATH=$GOPATH/bin:$PATH
+EOF
+source ~/.bash_profile
+```
 
 Fetch source and build both the client and the server (the `...` is not a typo), can be re-run to fetch updates:
 
-    go get -u github.com/continusec/geecert/cmd/...
+```bash
+go get -u github.com/continusec/geecert/cmd/...
+```
 
 Verify binaries are built:
 
-    ls $GOPATH/bin
+```bash
+ls $GOPATH/bin
+```
 
 Shows:
 
@@ -39,17 +43,20 @@ Shows:
 
 If you make any changes to `sso.proto`, run the following to re-generate new Go code (assumes that [protoc](https://github.com/google/protobuf/releases) is installed):
 
-    cd $GOPATH/src/github.com/continusec/geecert
-    go generate
+```bash
+cd $GOPATH/src/github.com/continusec/geecert
+go generate
+```
 
 To build and install new server and client after changing Go source, run:
 
-    go install github.com/continusec/geecert/cmd/...
+```bash
+go install github.com/continusec/geecert/cmd/...
+```
 
 ## SSO Server
 
 The SSO Server can be built from source assuming a working `golang` install. It does however compile to a single statically linked binary, so once built that binary can be distributed to another machine without needing anything else.
-
 
 ### Running `servegeecerts`
 
@@ -59,7 +66,9 @@ See that file for more information on the options available.
 
 Once a config file is prepared, simply run the server:
 
-    servegeecerts /path/to/config.proto
+```bash
+servegeecerts /path/to/config.proto
+```
 
 If all is good, you should see:
 
@@ -67,62 +76,75 @@ If all is good, you should see:
 
 Now, go build and run a client to use.
 
+### Host certificates
+
+The CA server has the ability to issue host certificates. If a request is made to: `https://your.server/hostCertificate?host=host.name`, the CA will check to see if the specified hostname is matched as an allowed host (per the server configuration file), and if so, it will attempt to begin an SSH handshake with that server, and sign the public key that it is presented and return that to the caller.
+
+In this manner this endpoint can be easily called by shell scripts in your fleet to self-sign host certificates.
+
 ## `geecertsample` client tool
 
-For the client we expect your server administrator (probably you!) to build a custom binary that comes pre-baked with your organizations configuration, by copying the sample harness, replacing with your configuration values, and building a binary that you distribute to your users.
+For the client your server administrator needs to configure and build a custom binary that comes pre-baked with your organizations configuration, by copying the sample harness, replacing with your configuration values, and building a binary that you distribute to your users.
 
 To do so, first make sure the source code is available:
 
-    go get -github.com/continusec/geecert
+```bash
+go get -u github.com/continusec/geecert
+```
 
 And, then in your project, e.g. in `$GOPATH/src/github.com/you/ssotool/cmd/getmycerts/main.go`:
 
+```go
+package main
 
-	package main
+import (
+    "flag"
+    "log"
 
-	import (
-		"flag"
-		"log"
+    "github.com/continusec/geecert"
+)
 
-		"github.com/continusec/geecert"
-	)
+var LocalConfiguration = geecert.ClientAppConfiguration{
+    HostedDomain: "orgname.com",
+    ClientID: "xxxxxxx.apps.googleusercontent.com",
+    ClientNotSoSecret: "yyyyyyy",
+    GRPCPEMCertificate: `-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----
+`,
+    CredentialFileName: ".orgnamesso",
+    ShortlivedKeyName:  "id_orgname_shortlived_rsa",
+    SectionIdentifier:  "ORGNAME-CA",
 
-	var LocalConfiguration = geecert.ClientAppConfiguration{
-		HostedDomain: "orgname.com",
-		ClientID: "xxxxxxx.apps.googleusercontent.com",
-		ClientNotSoSecret: "yyyyyyy",
-		GRPCPEMCertificate: `-----BEGIN CERTIFICATE-----
-	...
-	-----END CERTIFICATE-----
-	`,
-		CredentialFileName: ".orgnamesso",
-		ShortlivedKeyName:  "id_orgname_shortlived_rsa",
-		SectionIdentifier:  "ORGNAME-CA",
+    // Other fields are specified via defaults in flags below
+}
 
-		// Other fields are specified via defaults in flags below
-	}
+func main() {
+    flag.StringVar(&LocalConfiguration.GRPCServer, "server", "sso.orgname.com:10000", "Address:port of the server to connect to")
+    flag.StringVar(&LocalConfiguration.GRPCPEMCertificatePath, "server_cert", "", "Certificate expected from the server for TLS, overrides default in binary")
+    flag.BoolVar(&LocalConfiguration.OverrideMachinePolicy, "override_machine_policy", false, "Please don't use this.")
+    flag.BoolVar(&LocalConfiguration.OverrideGrpcSecurity, "allow_insecure_connect_to_sso_server", false, "Please don't use this.")
+    flag.BoolVar(&LocalConfiguration.UseSystemCaForCert, "server_cert_from_real_ca", false, "Use system CA for server cert.")
+    flag.Parse()
 
-	func main() {
-		flag.StringVar(&LocalConfiguration.GRPCServer, "server", "sso.orgname.com:10000", "Address:port of the server to connect to")
-		flag.StringVar(&LocalConfiguration.GRPCPEMCertificatePath, "server_cert", "", "Certificate expected from the server for TLS, overrides default in binary")
-		flag.BoolVar(&LocalConfiguration.OverrideMachinePolicy, "override_machine_policy", false, "Please don't use this.")
-		flag.BoolVar(&LocalConfiguration.OverrideGrpcSecurity, "allow_insecure_connect_to_sso_server", false, "Please don't use this.")
-		flag.BoolVar(&LocalConfiguration.UseSystemCaForCert, "server_cert_from_real_ca", false, "Use system CA for server cert.")
-		flag.Parse()
-
-		err := geecert.ProcessClient(&LocalConfiguration)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+    err := geecert.ProcessClient(&LocalConfiguration)
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+```
 
 Or similar. Then build it:
 
-    go install github.com/you/ssotool/cmd/getmycerts
+```bash
+go install github.com/you/ssotool/cmd/getmycerts
+```
 
 And run:
 
-    getmycerts
+```bash
+getmycerts
+```
 
 (Note, this is intended to be run from an end-client workstation, e.g. your laptop, rather than an intermediate server)
 
@@ -136,17 +158,17 @@ Finally the client will update a set of config files in `~/.ssh`. Specifically i
 
 1. Overwrite `~/.ssh/id_orgname_shortlived_rsa` with the new private key generated.
 
-2. Overwrite `~/.ssh/id_orgname_shortlived_rsa.pub` with the new public key generated.
+1. Overwrite `~/.ssh/id_orgname_shortlived_rsa.pub` with the new public key generated.
 
-3. Overwrite `~/.ssh/id_orgname_shortlived_rsa-cert.pub` with the certicate received for that key.
+1. Overwrite `~/.ssh/id_orgname_shortlived_rsa-cert.pub` with the certicate received for that key.
 
-4. Edit `~/known_hosts` to add (and overwrite this section on subsequent runs) this section:
+1. Edit `~/known_hosts` to add (and overwrite this section on subsequent runs) this section:
 
         # AUTOGENERATED:BEGIN:GEECERT - DO NOT EDIT BETWEEN MARKERS!
         @cert-authority *.yourdomain.com sha-rsa AAAAB3NzaC...qZyhLayRUw== GEECERTCA
         # AUTOGENERATED:END:GEECERT- DO NOT EDIT BETWEEN MARKERS!
 
-5. Edit `~/config` to add (and overwrite this section on subsequent runs) this section:
+1. Edit `~/config` to add (and overwrite this section on subsequent runs) this section:
 
         # AUTOGENERATED:BEGIN:GEECERT - DO NOT EDIT BETWEEN MARKERS!
         Host *.yourdomain.com
@@ -158,39 +180,46 @@ Finally the client will update a set of config files in `~/.ssh`. Specifically i
 
 This instructs the client to use (and only use) the new certificate, and to trust the same CA for host-based authentication. The config returned here is controlled by the server.
 
-### Tip: Worried about bad things happening to good config?
+### Tip: Worried about bad things happening to good config
 
 Consider backing up your `~/.ssh` before running the tool if concerned. Alternatively consider running a local git repo until comfortable with what the tool is doing - make it easy to see the differences:
 
-    cd ~/.ssh
-    git init
-    git add *
-    git commit -a -m "Initial commit."
+```bash
+cd ~/.ssh
+git init
+git add *
+git commit -a -m "Initial commit."
+```
 
+## Troubleshooting
 
-# Troubleshooting
+### "FileVault must be enabled" error
 
-## "FileVault must be enabled" error
 The client soft-enforces a minimum security profile that should be present on a workstation on in order to receive credentials to production systems. As such, when present on a Mac, if full disk encryption is not enabled, then the client will not run (and other platforms to follow). The intention is to mitigate against theft of a device that contains credentials.
 
 The best way to fix this error is to enabled FileVault. Alternatively, re-run with `--override_machine_policy` (if you choose to leave this option in your binary).
 
-## Deleting cached credentials
+### Deleting cached credentials
+
 If there are errors coming back from the Google server such as `invalid_grant`, try removing the saved credentials and re-authorizing the application.
 
-    rm ~/.orgnamesso
+```bash
+rm ~/.orgnamesso
+```
 
 Then re-run the tool:
 
-    getmycerts
+```bash
+getmycerts
+```
 
-## Revoking access to Google account
+### Revoking access to Google account
 
 To revoke access to your Google account, visit:
 <https://security.google.com/settings/security/permissions>
 
 And remove the application that matches your client ID. Note that since the ID Tokens issued by Google are generally for 1 hour, they will continue to be accepted by the SSO server until they timeout.
 
-# Acknowledgements
+## Acknowledgements
 
 The author gratefully acknowledges the initial funding for development of this tool by [Androgogic Pty Ltd](http://www.androgogic.com/).

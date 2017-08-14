@@ -54,6 +54,7 @@ allowed_users: <
     >
 >
 
-http_listen_port: 10001
-allowed_hosts: "*.yourdomain.com"
-caddy_file_path: "/path/to/sample_caddy_file"
+# Uncomment the following if you wish to issue host certificates
+# http_listen_port: 10001 # port to listen to HTTP requests on
+# allowed_hosts: "*.yourdomain.com" # list of glob hostnames that you will issue certs for
+# caddy_file_path: "/path/to/sample_caddy_file" # edit the sample_caddy_file
