@@ -170,7 +170,6 @@ func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*p
 			"Host " + s.Config.ClientConfigScope,
 			"    User " + userConf.Username,
 			"    IdentityFile $CERTNAME", // client to replace
-			"    IdentitiesOnly yes",
 			"    PasswordAuthentication no",
 		}, s.Config.AdditionalSshConfigurationLine, "    "),
 	}, nil
