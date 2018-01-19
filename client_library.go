@@ -83,6 +83,9 @@ type ClientAppConfiguration struct {
 	OverrideGrpcSecurity  bool // If true, allow insecure connection to gRPC server
 	UseSystemCaForCert    bool // If true, use a system CA instead of self-signed certificate
 
+	DontWriteKeysToDisk  bool // If true, never write private keys/certs to disk, instead use agent only
+	OverrideNoKeysToDisk bool // If true, ignore the above, but print a WARNING
+
 	ShortlivedKeyName string // e.g. id_orgname_shortlived_rsa
 	SectionIdentifier string // e.g. ORGNAME-CA
 }
@@ -417,28 +420,39 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, h
 		}
 	}
 
-	log.Println("Writing new private key.")
-	err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName), pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-		},
-	), 0600)
-	if err != nil {
-		return err
+	writeToDisk := true
+	if config.DontWriteKeysToDisk {
+		if config.OverrideNoKeysToDisk {
+			log.Println("WARNING: Overriding no writing key to disk policy.")
+		} else {
+			writeToDisk = false
+		}
 	}
 
-	// And public key too, not that it should be needed in theory, but SSH moans if it isn't there.
-	// Works in openssh 6.9. Broken in 7.2. Patch has been submitted to openssh team.
-	err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName+".pub"), []byte("ssh-rsa "+ourPubKeyString+" ignorethiscomment\n"), 0644)
-	if err != nil {
-		return err
-	}
+	if writeToDisk {
+		log.Println("Writing new private key.")
+		err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName), pem.EncodeToMemory(
+			&pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+			},
+		), 0600)
+		if err != nil {
+			return err
+		}
 
-	log.Println("Installing new certificate. For more info, run: ssh-keygen -Lf ~/.ssh/" + config.ShortlivedKeyName + "-cert.pub")
-	err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName+"-cert.pub"), []byte(resp.Certificate), 0644)
-	if err != nil {
-		return err
+		// And public key too, not that it should be needed in theory, but SSH moans if it isn't there.
+		// Works in openssh 6.9. Broken in 7.2. Patch has been submitted to openssh team.
+		err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName+".pub"), []byte("ssh-rsa "+ourPubKeyString+" ignorethiscomment\n"), 0644)
+		if err != nil {
+			return err
+		}
+
+		log.Println("Installing new certificate. For more info, run: ssh-keygen -Lf ~/.ssh/" + config.ShortlivedKeyName + "-cert.pub")
+		err = SafeSave(filepath.Join(sshDir, config.ShortlivedKeyName+"-cert.pub"), []byte(resp.Certificate), 0644)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Update known hosts
@@ -459,8 +473,12 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, h
 
 	// Check if ssh-agent is running, and if so, add our cert
 	authSock := os.Getenv("SSH_AUTH_SOCK")
-	if len(authSock) != 0 {
-		log.Println("SSH_AUTH_SOCK detected, adding certificate to ssh-agent.")
+	if len(authSock) == 0 {
+		if !writeToDisk {
+			return errors.New("No SSH_AUTH_SOCK, and client is configured never to write credentials to disk. Please run ssh-agent, or run with --override_no_write_key_policy")
+		}
+	} else {
+		log.Println("SSH_AUTH_SOCK detected, adding certificate to ssh-agent. For more info, run: ssh-add -L  | ssh-keygen -Lf -")
 		// Try to add our cert
 		pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(resp.Certificate))
 		if err != nil {
