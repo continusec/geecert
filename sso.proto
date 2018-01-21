@@ -64,4 +64,6 @@ message ServerConfig {
     int32 http_listen_port = 12; // listens on localhost only, caddy file should be used for HTTPS (will fetch certs from Let's Encrypt automatically)
     repeated string allowed_hosts = 13;
     string caddy_file_path = 14;
+
+    int32 ssh_connect_for_publickey_port = 15;
 }

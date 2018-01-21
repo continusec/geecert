@@ -62,7 +62,7 @@ func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 	var certToReturn []byte
 	var kt string
 
-	ssh.Dial("tcp", fmt.Sprintf("%s:%d", h, 22), &ssh.ClientConfig{
+	ssh.Dial("tcp", fmt.Sprintf("%s:%d", h, s.Config.SshConnectForPublickeyPort), &ssh.ClientConfig{
 		User: "ca",
 		Auth: []ssh.AuthMethod{
 			ssh.Password("wrongpassignoreme"),
