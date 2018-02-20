@@ -1,0 +1,43 @@
+[[constraint]]
+  name = "github.com/dgrijalva/jwt-go"
+  version = "3.1.0"
+
+[[constraint]]
+  name = "github.com/golang/protobuf"
+  version = "1.0.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/hydrogen18/stoppableListener"
+
+[[constraint]]
+  name = "github.com/mholt/caddy"
+  version = "0.10.10"
+
+[[override]]
+  name = "github.com/russross/blackfriday"
+  revision = "067529f716f4c3f5e37c8c95ddd59df1007290ae"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/mitchellh/go-homedir"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/pkg/browser"
+
+[[constraint]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+
+[[constraint]]
+  branch = "master"
+  name = "golang.org/x/net"
+
+[[constraint]]
+  name = "google.golang.org/grpc"
+  version = "1.10.0"
+
+[prune]
+  go-tests = true
+  unused-packages = true
