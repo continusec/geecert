@@ -33,7 +33,7 @@ user_profiles: <
         cert_permissions: <key: "permit-port-forwarding">
         ssh_config_lines: "Host *.example.com"
         ssh_config_lines: "    User ec2-user"
-        ssh_config_lines: "    IdentityFile $CERTFILE"
+        ssh_config_lines: "    IdentityFile $CERTNAME" # client updates
         ssh_config_lines: "    PasswordAuthentication no"
         ssh_config_lines: "    Port 12345"
         ssh_config_lines: "    StrictHostKeyChecking yes"
