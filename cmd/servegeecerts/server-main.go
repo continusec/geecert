@@ -153,7 +153,42 @@ func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*p
 		return nil, err
 	}
 
-	cert, nva, err := CreateUserCertificate(append([]string{userConf.Username}, userConf.ExtraPrincipals...), idTokenClaims.EmailAddress, keyToSign, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second, userConf.CertPermissions)
+	// Use map to de-dupe
+	principals := make(map[string]interface{})
+	knownHosts := make(map[string]interface{})
+	perms := make(map[string]string)
+	var sshConfig []string
+	for _, up := range userConf.Profiles {
+		p, ok := s.Config.UserProfiles[up]
+		if !ok {
+			log.Printf("Warning, profile not found for user (ignoring): %s", up)
+			continue
+		}
+		for _, pp := range p.Principals {
+			principals[pp] = nil
+		}
+		for _, pp := range p.KnownHosts {
+			knownHosts[pp] = nil
+		}
+		for k, v := range p.CertPermissions {
+			perms[k] = v // last one wins - usually these are blank anyway
+		}
+		sshConfig = append(sshConfig, p.SshConfigLines...)
+	}
+	var principalList []string
+	for key := range principals {
+		principalList = append(principalList, key)
+	}
+	var knownHostsFile []string
+	for kh := range knownHosts {
+		knownHostsFile = append(knownHostsFile, fmt.Sprintf("@cert-authority %s ssh-rsa %s %s",
+			kh,
+			base64.StdEncoding.EncodeToString(ourCAPubKey.Marshal()),
+			s.Config.CaComment,
+		))
+	}
+
+	cert, nva, err := CreateUserCertificate(principalList, idTokenClaims.EmailAddress, keyToSign, caKey, time.Duration(s.Config.GenerateCertDurationSeconds)*time.Second, perms)
 	if err != nil {
 		return nil, err
 	}
@@ -161,25 +196,11 @@ func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*p
 	log.Printf("Issued certificate to %s valid until %s.\n", idTokenClaims.EmailAddress, nva.Format(time.RFC3339))
 
 	return &pb.SSHCertsResponse{
-		Status:      pb.ResponseCode_OK,
-		Certificate: fmt.Sprintf("ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(cert), idTokenClaims.EmailAddress),
-		CertificateAuthorities: []string{
-			fmt.Sprintf("@cert-authority %s ssh-rsa %s %s", s.Config.ClientConfigScope, base64.StdEncoding.EncodeToString(ourCAPubKey.Marshal()), s.Config.CaComment),
-		},
-		Config: augmentWithIndented([]string{
-			"Host " + s.Config.ClientConfigScope,
-			"    User " + userConf.Username,
-			"    IdentityFile $CERTNAME", // client to replace
-			"    PasswordAuthentication no",
-		}, s.Config.AdditionalSshConfigurationLine, "    "),
+		Status:                 pb.ResponseCode_OK,
+		Certificate:            fmt.Sprintf("ssh-rsa-cert-v01@openssh.com %s %s\n", base64.StdEncoding.EncodeToString(cert), idTokenClaims.EmailAddress),
+		CertificateAuthorities: knownHostsFile,
+		Config:                 sshConfig,
 	}, nil
-}
-
-func augmentWithIndented(base []string, additional []string, indent string) []string {
-	for _, line := range additional {
-		base = append(base, indent+line)
-	}
-	return base
 }
 
 func LoadPrivateKeyFromPEM(path string) (*rsa.PrivateKey, error) {

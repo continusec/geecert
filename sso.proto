@@ -1,6 +1,6 @@
 /*
 
-Copyright 2016 Continusec Pty Ltd
+Copyright 2018 Continusec Pty Ltd
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -42,14 +42,19 @@ message SSHCertsResponse {
 
 message ServerConfig {
     message UserConfig {
-        string username = 1;
-        repeated string extra_principals = 2;
-        map<string,string> cert_permissions = 3;
+        repeated string profiles = 4;
+    }
+
+    message Profile {
+        repeated string principals = 1;
+        map<string,string> cert_permissions = 2;
+        repeated string ssh_config_lines = 3;
+        repeated string known_hosts = 4;
     }
 
     string ca_key_path = 1;
     int32 generate_cert_duration_seconds = 2;
-    string client_config_scope = 3;
+
     map<string,UserConfig> allowed_users = 4;
     int32 listen_port = 5;
     string allowed_domain_for_id_token = 6;
@@ -58,7 +63,6 @@ message ServerConfig {
     string server_cert_path = 8;
     string server_key_path = 9;
     
-    repeated string additional_ssh_configuration_line = 10;
     string ca_comment = 11;
 
     int32 http_listen_port = 12; // listens on localhost only, caddy file should be used for HTTPS (will fetch certs from Let's Encrypt automatically)
@@ -66,4 +70,6 @@ message ServerConfig {
     string caddy_file_path = 14;
 
     int32 ssh_connect_for_publickey_port = 15;
+
+    map<string,Profile> user_profiles = 16;
 }

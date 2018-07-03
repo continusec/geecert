@@ -14,7 +14,7 @@ server_key_path: "/path/to/grpc-cert.pem"
 ##### ID TOKEN VALIDATION
 
 # Hosted domain allowed for ID token validation
-allowed_domain_for_id_token: "yourdomain.com"
+allowed_domain_for_id_token: "example.com"
 
 # Allowed client ID registered with Google: https://console.developers.google.com/
 allowed_client_id_for_id_token: "xxxxxxxxxx.apps.googleusercontent.com"
@@ -22,14 +22,25 @@ allowed_client_id_for_id_token: "xxxxxxxxxx.apps.googleusercontent.com"
 
 ##### GENERATED SSH CONFIG OPTIONS
 
-# Hosts to apply configuration to for clients
-client_config_scope: "*.yourdomain.com"
-
 # Appears as comment in the known_hosts
 ca_comment: "ORGNAME-CA"
 
-# Zero or more, applies to the client_config_scope in the generated config file
-additional_ssh_configuration_line: "Port 10011"
+user_profiles: <
+    key: "admin"
+    value: <
+        principals: "ec2-user"
+        cert_permissions: <key: "permit-pty">
+        cert_permissions: <key: "permit-port-forwarding">
+        ssh_config_lines: "Host *.example.com"
+        ssh_config_lines: "    User ec2-user"
+        ssh_config_lines: "    IdentityFile $CERTFILE"
+        ssh_config_lines: "    PasswordAuthentication no"
+        ssh_config_lines: "    Port 12345"
+        ssh_config_lines: "    StrictHostKeyChecking yes"
+        known_hosts: "*.example.com"
+    >
+>
+
 
 ##### CERTIFICATE GENERATION OPTIONS
 
@@ -41,16 +52,13 @@ generate_cert_duration_seconds: 86400
 allowed_users: <
     key: "username@yourdomain.com"
     value: <
-        username: "foo"
-        extra_principals: ["root"]
-        cert_permissions: <key: "permit-pty">
+        profiles: "admin"
     >
 >
 allowed_users: <
     key: "otheruser@yourdomain.com"
     value: <
-        username: "bar"
-        cert_permissions: <key: "permit-pty">
+        profiles: "admin"
     >
 >
 
