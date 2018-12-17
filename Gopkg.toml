@@ -1,10 +1,10 @@
 [[constraint]]
   name = "github.com/dgrijalva/jwt-go"
-  version = "3.1.0"
+  version = "3.2.0"
 
 [[constraint]]
   name = "github.com/golang/protobuf"
-  version = "1.0.0"
+  version = "1.2.0"
 
 [[constraint]]
   branch = "master"
@@ -12,15 +12,11 @@
 
 [[constraint]]
   name = "github.com/mholt/caddy"
-  version = "0.10.10"
-
-[[override]]
-  name = "github.com/russross/blackfriday"
-  revision = "067529f716f4c3f5e37c8c95ddd59df1007290ae"
+  version = "0.11.1"
 
 [[constraint]]
-  branch = "master"
   name = "github.com/mitchellh/go-homedir"
+  version = "1.0.0"
 
 [[constraint]]
   branch = "master"
@@ -36,7 +32,7 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.10.0"
+  version = "1.17.0"
 
 [prune]
   go-tests = true

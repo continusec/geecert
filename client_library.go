@@ -1,6 +1,6 @@
 /*
 
-Copyright 2017 Continusec Pty Ltd
+Copyright 2018 Continusec Pty Ltd
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -496,10 +496,23 @@ func FetchCerts(config *ClientAppConfiguration, idToken string, sshDir string, h
 			return err
 		}
 		sshAgent := agent.NewClient(agentSocket)
+		keys, err := sshAgent.List()
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if k.Comment == config.ShortlivedKeyName {
+				err = sshAgent.Remove(k)
+				if err != nil {
+					log.Printf("skipping error when attempting to remove older cert: %s", err)
+				}
+			}
+		}
 		err = sshAgent.Add(agent.AddedKey{
 			PrivateKey:   privateKey,
 			Certificate:  cert,
 			LifetimeSecs: uint32(ttl),
+			Comment:      config.ShortlivedKeyName,
 		})
 		if err != nil {
 			return err
