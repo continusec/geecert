@@ -65,11 +65,16 @@ message ServerConfig {
     
     string ca_comment = 11;
 
-    int32 http_listen_port = 12; // listens on localhost only, caddy file should be used for HTTPS (will fetch certs from Let's Encrypt automatically)
+    int32 http_listen_port = 12; // actually listens https if host_signing_tls_path set
     repeated string allowed_hosts = 13;
-    string caddy_file_path = 14;
+
+    // no longer supporeted
+    // string caddy_file_path = 14;
 
     int32 ssh_connect_for_publickey_port = 15;
 
     map<string,Profile> user_profiles = 16;
+
+    // path to pem with key, cert and intermediates
+    string host_signing_tls_path = 17;
 }

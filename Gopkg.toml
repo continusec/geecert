@@ -11,10 +11,6 @@
   name = "github.com/hydrogen18/stoppableListener"
 
 [[constraint]]
-  name = "github.com/mholt/caddy"
-  version = "0.11.1"
-
-[[constraint]]
   name = "github.com/mitchellh/go-homedir"
   version = "1.0.0"
 

@@ -47,10 +47,7 @@ import (
 
 	"net/http"
 
-	"github.com/mholt/caddy"
 	"golang.org/x/crypto/ssh"
-
-	_ "github.com/mholt/caddy/caddyhttp"
 )
 
 type SSOServer struct {
@@ -117,7 +114,15 @@ func (s *SSOServer) issueHostCertificate(w http.ResponseWriter, r *http.Request)
 
 func (s *SSOServer) StartHTTP() {
 	http.HandleFunc("/hostCertificate", s.issueHostCertificate)
-	http.ListenAndServe(fmt.Sprintf("localhost:%d", s.Config.HttpListenPort), nil)
+	var err error
+	if s.Config.HostSigningTlsPath == "" { // http
+		err = http.ListenAndServe(fmt.Sprintf(":%d", s.Config.HttpListenPort), nil)
+	} else {
+		err = http.ListenAndServeTLS(fmt.Sprintf(":%d", s.Config.HttpListenPort), s.Config.HostSigningTlsPath, s.Config.HostSigningTlsPath, nil)
+	}
+	if err != nil {
+		log.Printf("Error starting HTTP server: %s", err)
+	}
 }
 
 func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*pb.SSHCertsResponse, error) {
@@ -289,28 +294,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var input caddy.Input
-	if conf.CaddyFilePath != "" {
-		caddy.SetDefaultCaddyfileLoader("default", caddy.LoaderFunc(func(serverType string) (caddy.Input, error) {
-			contents, err := ioutil.ReadFile(conf.CaddyFilePath)
-			if err != nil {
-				return nil, err
-			}
-			return caddy.CaddyfileInput{
-				Contents:       contents,
-				Filepath:       conf.CaddyFilePath,
-				ServerTypeName: serverType,
-			}, nil
-		}))
-
-		caddy.AppName = "geecert server"
-		caddy.AppVersion = "0.1"
-		input, err = caddy.LoadCaddyfile("http")
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
 	tc, err := credentials.NewServerTLSFromFile(conf.ServerCertPath, conf.ServerKeyPath)
 	if err != nil {
 		log.Fatal(err)
@@ -328,13 +311,6 @@ func main() {
 	log.Println("Serving...")
 	if conf.HttpListenPort != 0 {
 		go sso.StartHTTP()
-
-		if input != nil {
-			_, err := caddy.Start(input)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
 	}
 
 	grpcServer.Serve(lis)
