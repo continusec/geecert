@@ -61,10 +61,6 @@ import (
 )
 
 const (
-	AuthURI  = "https://accounts.google.com/o/oauth2/auth"
-	TokenURI = "https://accounts.google.com/o/oauth2/token"
-	CertURL  = "https://www.googleapis.com/oauth2/v1/certs"
-
 	RedirectOOB       = "urn:ietf:wg:oauth:2.0:oob"
 	RedirectLocalhost = "http://localhost"
 )
@@ -88,6 +84,31 @@ type ClientAppConfiguration struct {
 
 	ShortlivedKeyName string // e.g. id_orgname_shortlived_rsa
 	SectionIdentifier string // e.g. ORGNAME-CA
+
+	OpenIDConfigurationURL string // e.g.https://accounts.google.com/.well-known/openid-configuration for Google, https://login.microsoftonline.com/<tenancy id>/.well-known/openid-configuration for Azure AD
+	OOBURI                 string // if set, overrides std one
+	NeverOpenBrowser       bool
+	PortForLocalHost       int // if 0, a random one is used
+
+	AudienceInAppID          bool // if set verify "appid" claim for client ID, INSTEAd OF "aud" claim - useful for Azure Access Token
+	GetHostedDomainFromEmail bool // if set, check for suffix in email field instead of "hd" cliam. useful for Azure Access Token
+	SkipEmailVerified        bool // if set, don't require email_verified field. Useful for Azure Access token
+
+	UseAccessTokenInstead bool // if set, validate access token instead of id token. Useful for Azure AD which won't refresh ID Tokens
+
+	oidc OOIDClient
+}
+
+func (config *ClientAppConfiguration) Init() {
+	config.oidc = &OIDCIDTokenValidator{
+		ClientID:         config.ClientID,
+		ConfigurationURL: config.OpenIDConfigurationURL,
+		HostedDomain:     config.HostedDomain,
+
+		SkipEmailVerified:        config.SkipEmailVerified,
+		AudienceInAppID:          config.AudienceInAppID,
+		GetHostedDomainFromEmail: config.GetHostedDomainFromEmail,
+	}
 }
 
 var (
@@ -100,7 +121,7 @@ var (
 // Return code, redirect URI, error
 func DoBrowserDance(config *ClientAppConfiguration) (string, string, error) {
 	// Find a free port number
-	addr, err := net.ResolveTCPAddr("tcp", "localhost:0")
+	addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("localhost:%d", config.PortForLocalHost))
 	if err != nil {
 		return "", "", err
 	}
@@ -124,12 +145,10 @@ func DoBrowserDance(config *ClientAppConfiguration) (string, string, error) {
 	redir := RedirectLocalhost + ":" + strconv.Itoa(port)
 
 	// Send the user there
-	urlToVisit := AuthURI + "?" + url.Values{
-		"scope":         {"email"},
-		"redirect_uri":  {redir},
-		"response_type": {"code"},
-		"client_id":     {config.ClientID},
-	}.Encode()
+	urlToVisit, err := config.oidc.GetAuthRedirect(redir)
+	if err != nil {
+		return "", "", err
+	}
 
 	err = browser.OpenURL(urlToVisit)
 	if err != nil {
@@ -174,12 +193,15 @@ func DoBrowserDance(config *ClientAppConfiguration) (string, string, error) {
 
 func DoOOBDance(config *ClientAppConfiguration) (string, string, error) {
 	// Send the user there
-	urlToVisit := AuthURI + "?" + url.Values{
-		"scope":         {"email"},
-		"redirect_uri":  {RedirectOOB},
-		"response_type": {"code"},
-		"client_id":     {config.ClientID},
-	}.Encode()
+	redir := config.OOBURI
+	if redir == "" {
+		redir = RedirectOOB // default to std
+	}
+
+	urlToVisit, err := config.oidc.GetAuthRedirect(redir)
+	if err != nil {
+		return "", "", err
+	}
 
 	fmt.Printf("Please visit (in your browser):\n%s\n\nAnd then paste the code received here: ", urlToVisit)
 
@@ -199,7 +221,11 @@ func SwapCodeForTokens(config *ClientAppConfiguration, code, redir string) (*Cac
 	log.Print("Exchanging authorization code for long-lived credentials.")
 
 	// Now we have an authorization code, exchange this for the good stuff
-	resp, err := http.PostForm(TokenURI, url.Values{
+	ep, err := config.oidc.GetTokenExchangeEndpoint()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.PostForm(ep, url.Values{
 		"code":          {code},
 		"client_id":     {config.ClientID},
 		"client_secret": {config.ClientNotSoSecret},
@@ -237,7 +263,11 @@ func SwapRefreshForTokens(config *ClientAppConfiguration, refreshToken string) (
 	log.Print("Sending refresh token for short-lived credentials.")
 
 	// Now we have an authorization code, exchange this for the good stuff
-	resp, err := http.PostForm(TokenURI, url.Values{
+	ep, err := config.oidc.GetTokenExchangeEndpoint()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.PostForm(ep, url.Values{
 		"refresh_token": {refreshToken},
 		"client_id":     {config.ClientID},
 		"client_secret": {config.ClientNotSoSecret},
@@ -276,23 +306,28 @@ func SwapRefreshForTokens(config *ClientAppConfiguration, refreshToken string) (
 type CachedCreds struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
 	IDToken      string `json:"id_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
 // Prompt user to
 func Reauthorize(config *ClientAppConfiguration, path string) error {
-	// First try the browser dance as it's easier for the user
-	code, redir, err := DoBrowserDance(config)
-	switch err {
-	case nil:
-		// yay, pass!
-	case ErrUserDenied:
-		return err
-	default:
-		// Fall back to OOB dance
+	var code, redir string
+	var err error
+	if config.NeverOpenBrowser {
 		code, redir, err = DoOOBDance(config)
+	} else {
+		// First try the browser dance as it's easier for the user
+		code, redir, err = DoBrowserDance(config)
+		switch err {
+		case nil:
+			// yay, pass!
+		case ErrUserDenied:
+			return err
+		default:
+			// Fall back to OOB dance
+			code, redir, err = DoOOBDance(config)
+		}
 	}
 	if err != nil {
 		return err
@@ -709,6 +744,13 @@ func signData(config *ClientAppConfiguration, msg []byte) ([]byte, error) {
 	return rv, nil
 }
 
+func (c *ClientAppConfiguration) ExtractTokenFromCachedCreds(creds *CachedCreds) string {
+	if c.UseAccessTokenInstead {
+		return creds.AccessToken
+	}
+	return creds.IDToken
+}
+
 func ProcessClient(config *ClientAppConfiguration) error {
 	err := ValidateMachineIsSuitable(config)
 	if err != nil {
@@ -735,7 +777,7 @@ func ProcessClient(config *ClientAppConfiguration) error {
 	}
 
 	// Now that we have creds, try to get a valid ID token refreshing if needed
-	idTokenClaims, err := ValidateTokenWithRetryForClock(creds.IDToken, config.ClientID, config.HostedDomain, 5)
+	idTokenClaims, err := ValidateTokenWithRetryForClock(config.oidc, config.ExtractTokenFromCachedCreds(creds), 5)
 	if err != nil {
 		creds, err = SwapRefreshForTokens(config, creds.RefreshToken)
 		if err != nil {
@@ -745,14 +787,14 @@ func ProcessClient(config *ClientAppConfiguration) error {
 		if err != nil {
 			return err
 		}
-		idTokenClaims, err = ValidateTokenWithRetryForClock(creds.IDToken, config.ClientID, config.HostedDomain, 5)
+		idTokenClaims, err = ValidateTokenWithRetryForClock(config.oidc, config.ExtractTokenFromCachedCreds(creds), 5)
 		if err != nil {
 			return err
 		}
 	}
 
-	log.Print("Have valid ID token for: ", idTokenClaims.EmailAddress)
-	err = FetchCerts(config, creds.IDToken, filepath.Join(hd, ".ssh"), filepath.Join("~", ".ssh"))
+	log.Print("Have valid token for: ", idTokenClaims.EmailAddress)
+	err = FetchCerts(config, config.ExtractTokenFromCachedCreds(creds), filepath.Join(hd, ".ssh"), filepath.Join("~", ".ssh"))
 	if err != nil {
 		return err
 	}

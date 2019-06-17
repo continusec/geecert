@@ -20,20 +20,16 @@ package geecert
 
 import (
 	"crypto/rsa"
-	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"sync"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
-)
-
-const (
-	GoogleCertificateURL = "https://www.googleapis.com/oauth2/v1/certs"
 )
 
 var (
@@ -44,7 +40,13 @@ var (
 	ErrCertificateNotValid      = errors.New("ErrCertificateNotValid")
 )
 
-func GoogleKeyFunc(t *jwt.Token) (interface{}, error) {
+// ensureConfig *must* be called
+func (v *OIDCIDTokenValidator) keyFunc(t *jwt.Token) (interface{}, error) {
+	err := v.ensureHasConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	// Ensure that RS256 is used. This might seem overkill to care,
 	// but since the JWT spec actually allows a None algorithm which
 	// we definitely don't want, so instead we whitelist what we will allow.
@@ -63,55 +65,25 @@ func GoogleKeyFunc(t *jwt.Token) (interface{}, error) {
 		return nil, ErrMissingKeyID
 	}
 
-	// Get Cert
-	cert, err := GoogleCache.Get(kidS)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO - figure out why we need to mess with the cert
-	cert.IsCA = true
-	cert.KeyUsage |= x509.KeyUsageCertSign
-
-	cp := x509.NewCertPool()
-	cp.AddCert(cert)
-	_, err = cert.Verify(x509.VerifyOptions{
-		DNSName:   "federated-signon.system.gserviceaccount.com",
-		Roots:     cp,
-		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	rsaKey, ok := cert.PublicKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, ErrUnexpectedAlgorithm
-	}
-
-	return rsaKey, nil
+	// Get key from cache
+	return v.kk.Get(kidS)
 }
 
-type CertificateCache struct {
-	URL      string
+type keyCache struct {
+	JWKSURL  string
 	Interval time.Duration
 
 	updateLock     sync.Mutex
 	readLock       sync.Mutex
-	certs          map[string]*x509.Certificate
+	keys           map[string]*rsa.PublicKey
 	earliestUpdate time.Time
-}
-
-var GoogleCache = &CertificateCache{
-	URL:      GoogleCertificateURL,
-	Interval: 5 * time.Minute,
 }
 
 // Looks for the certificate with given ID. If not found, and not recently
 // updated, then update the cache
-func (cc *CertificateCache) Get(kid string) (*x509.Certificate, error) {
+func (cc *keyCache) Get(kid string) (*rsa.PublicKey, error) {
 	cc.readLock.Lock()
-	rv, ok := cc.certs[kid]
+	rv, ok := cc.keys[kid]
 	cc.readLock.Unlock()
 	if ok {
 		return rv, nil
@@ -123,7 +95,7 @@ func (cc *CertificateCache) Get(kid string) (*x509.Certificate, error) {
 	}
 
 	cc.readLock.Lock()
-	rv, ok = cc.certs[kid]
+	rv, ok = cc.keys[kid]
 	cc.readLock.Unlock()
 	if ok {
 		return rv, nil
@@ -132,8 +104,18 @@ func (cc *CertificateCache) Get(kid string) (*x509.Certificate, error) {
 	return nil, ErrMissingCertificate
 }
 
+type jwkResp struct {
+	Keys []struct {
+		KID string `json:"kid"`
+		KTY string `json:"kty"`
+		Use string `json:"use"`
+		N   string `json:"n"`
+		E   string `json:"e"`
+	} `json:"keys"`
+}
+
 // Updates the cache if past interval.
-func (cc *CertificateCache) Update() error {
+func (cc *keyCache) Update() error {
 	cc.updateLock.Lock()
 	defer cc.updateLock.Unlock()
 
@@ -142,7 +124,7 @@ func (cc *CertificateCache) Update() error {
 		return nil
 	}
 
-	resp, err := http.Get(cc.URL)
+	resp, err := http.Get(cc.JWKSURL)
 	if err != nil {
 		return err
 	}
@@ -159,43 +141,37 @@ func (cc *CertificateCache) Update() error {
 		return ErrUnexpectedServerResponse
 	}
 
-	var certsRaw interface{}
-	err = json.Unmarshal(body, &certsRaw)
+	var keys jwkResp
+	err = json.Unmarshal(body, &keys)
 	if err != nil {
 		return ErrUnexpectedServerResponse
 	}
 
-	certs, ok := certsRaw.(map[string]interface{})
-	if !ok {
-		return ErrUnexpectedServerResponse
-	}
-
-	newCerts := make(map[string]*x509.Certificate)
-	for k, v := range certs {
-		vString, ok := v.(string)
-		if !ok {
-			return ErrUnexpectedServerResponse
+	newKeys := make(map[string]*rsa.PublicKey)
+	for _, k := range keys.Keys {
+		if k.Use != "sig" {
+			continue
 		}
-
-		// Decode PEM
-		block, _ := pem.Decode([]byte(vString))
-		if block == nil {
-			return ErrUnexpectedServerResponse
+		if k.KTY != "RSA" {
+			continue
 		}
-		if block.Type != "CERTIFICATE" {
-			return ErrUnexpectedServerResponse
-		}
-
-		cert, err := x509.ParseCertificate(block.Bytes)
+		eB, err := base64.RawURLEncoding.DecodeString(k.E)
 		if err != nil {
-			return err
+			return ErrUnexpectedServerResponse
+		}
+		nB, err := base64.RawURLEncoding.DecodeString(k.N)
+		if err != nil {
+			return ErrUnexpectedServerResponse
 		}
 
-		newCerts[k] = cert
+		newKeys[k.KID] = &rsa.PublicKey{
+			N: (&big.Int{}).SetBytes(nB),
+			E: int((&big.Int{}).SetBytes(eB).Int64()),
+		}
 	}
 
 	cc.readLock.Lock()
-	cc.certs = newCerts
+	cc.keys = newKeys
 	cc.readLock.Unlock()
 
 	cc.earliestUpdate = time.Now().Add(cc.Interval)

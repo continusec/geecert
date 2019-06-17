@@ -56,6 +56,7 @@ func main() {
 	flag.BoolVar(&LocalConfiguration.UseSystemCaForCert, "server_cert_from_real_ca", false, "Use system CA for server cert.")
 	flag.Parse()
 
+	LocalConfiguration.Init()
 	err := geecert.ProcessClient(&LocalConfiguration)
 	if err != nil {
 		log.Fatal(err)
