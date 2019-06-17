@@ -68,7 +68,7 @@ message ServerConfig {
     int32 http_listen_port = 12; // actually listens https if host_signing_tls_path set
     repeated string allowed_hosts = 13;
 
-    // no longer supporeted
+    // no longer supported
     // string caddy_file_path = 14;
 
     int32 ssh_connect_for_publickey_port = 15;
@@ -77,4 +77,17 @@ message ServerConfig {
 
     // path to pem with key, cert and intermediates
     string host_signing_tls_path = 17;
+
+    // e.g. https://accounts.google.com/.well-known/openid-configuration for Google
+    // e.g. https://login.microsoftonline.com/<tenancy id>/.well-known/openid-configuration for Azure AD
+    string oidc_configuration_url = 18;
+
+    // if set verify "appid" claim for client ID, INSTEAD OF "aud" claim - useful for Azure Access Token
+    bool look_for_audience_in_app_id = 19;
+
+    // if set, check for suffix in email field instead of "hd" cliam. useful for Azure Access Token
+    bool look_for_hosted_domain_in_email = 20;
+
+    // if set, don't require email_verified field. Useful for Azure Access token
+    bool skip_email_verified = 21;
 }

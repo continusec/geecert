@@ -1,6 +1,6 @@
 /*
 
-Copyright 2018 Continusec Pty Ltd
+Copyright 2019 Continusec Pty Ltd
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -52,6 +52,8 @@ import (
 
 type SSOServer struct {
 	Config *pb.ServerConfig
+
+	Validator geecert.IDTokenValidator
 }
 
 // Generate a host cert for whatever we see
@@ -126,7 +128,7 @@ func (s *SSOServer) StartHTTP() {
 }
 
 func (s *SSOServer) GetSSHCerts(ctx context.Context, in *pb.SSHCertsRequest) (*pb.SSHCertsResponse, error) {
-	idTokenClaims, err := geecert.ValidateIDToken(in.IdToken, s.Config.AllowedClientIdForIdToken, s.Config.AllowedDomainForIdToken)
+	idTokenClaims, err := s.Validator.ValidateIDToken(in.IdToken)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +307,18 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(grpc.Creds(tc))
-	sso := &SSOServer{Config: conf}
+	sso := &SSOServer{
+		Config: conf,
+		Validator: &geecert.OIDCIDTokenValidator{
+			ConfigurationURL: conf.OidcConfigurationUrl,
+			ClientID:         conf.AllowedClientIdForIdToken,
+			HostedDomain:     conf.AllowedDomainForIdToken,
+
+			SkipEmailVerified:        conf.SkipEmailVerified,
+			AudienceInAppID:          conf.LookForAudienceInAppId,
+			GetHostedDomainFromEmail: conf.LookForHostedDomainInEmail,
+		},
+	}
 	pb.RegisterGeeCertServerServer(grpcServer, sso)
 
 	log.Println("Serving...")
