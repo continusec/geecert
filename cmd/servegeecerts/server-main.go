@@ -61,11 +61,16 @@ func (s *SSOServer) makeHostCert(w http.ResponseWriter, h string) {
 	var certToReturn []byte
 	var kt string
 
+	// Derived from ssh.common.supportedHostKeyAlgos with certificate host key types removed
+	var supportedHostKeyAlgos = []string{
+		ssh.KeyAlgoECDSA256, ssh.KeyAlgoECDSA384, ssh.KeyAlgoECDSA521, ssh.KeyAlgoRSA, ssh.KeyAlgoDSA, ssh.KeyAlgoED25519,
+	}
 	ssh.Dial("tcp", fmt.Sprintf("%s:%d", h, s.Config.SshConnectForPublickeyPort), &ssh.ClientConfig{
 		User: "ca",
 		Auth: []ssh.AuthMethod{
 			ssh.Password("wrongpassignoreme"),
 		},
+		HostKeyAlgorithms: supportedHostKeyAlgos,
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			if key == nil {
 				return errors.New("no host key")
