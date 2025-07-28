@@ -18,6 +18,8 @@ limitations under the License.
 
 syntax = "proto3";
 
+option go_package = "github.com/continusec/geecert";
+
 service GeeCertServer {
     rpc GetSSHCerts (SSHCertsRequest) returns (SSHCertsResponse) {}
 }

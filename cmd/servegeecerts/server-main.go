@@ -30,14 +30,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/golang/protobuf/proto"
-
 	"golang.org/x/net/context"
 
 	"github.com/continusec/geecert"
 	pb "github.com/continusec/geecert/sso"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	"time"
 
@@ -51,6 +50,8 @@ import (
 )
 
 type SSOServer struct {
+	pb.UnimplementedGeeCertServerServer
+
 	Config *pb.ServerConfig
 
 	Validator geecert.IDTokenValidator
@@ -296,7 +297,7 @@ func main() {
 	}
 
 	conf := &pb.ServerConfig{}
-	err = proto.UnmarshalText(string(confData), conf)
+	err = prototext.Unmarshal(confData, conf)
 	if err != nil {
 		log.Fatal(err)
 	}
