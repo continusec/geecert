@@ -24,11 +24,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	jwt "github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var (
@@ -170,7 +171,11 @@ func (v *OIDCIDTokenValidator) ValidateIDToken(idToken string) (*IDTokenClaims, 
 	if err != nil {
 		return nil, err
 	}
-	if !mapClaims.VerifyIssuer(v.wkc.Issuer, true) {
+	issuer, err := mapClaims.GetIssuer()
+	if err != nil {
+		return nil, ErrInvalidIDToken
+	}
+	if issuer != v.wkc.Issuer {
 		return nil, ErrInvalidIDToken
 	}
 	if v.AudienceInAppID { // Azure won't refesh ID Tokens, so we use Access Token and verifiy the "appid" field instead of "aud"
@@ -186,7 +191,11 @@ func (v *OIDCIDTokenValidator) ValidateIDToken(idToken string) (*IDTokenClaims, 
 			return nil, ErrInvalidIDToken
 		}
 	} else {
-		if !mapClaims.VerifyAudience(v.ClientID, true) {
+		audii, err := mapClaims.GetAudience()
+		if err != nil {
+			return nil, ErrInvalidIDToken
+		}
+		if !slices.Contains(audii, v.ClientID) {
 			return nil, ErrInvalidIDToken
 		}
 	}
