@@ -12,26 +12,18 @@ For the client we expect your server administrator to build a custom binary that
 
 Both client and server are written in Go. Amongst other things, an advantage of writing this in Go means that it is easy to build and distribute a single static binary with no dependencies which is useful for distributing client login tool within your organization.
 
-First, install go <https://golang.org/dl/> and set an appropriate `GOPATH` in your profile, for example:
-
-```bash
-cat >> ~/.bash_profile <<EOF
-export GOPATH=$HOME/go
-export PATH=$GOPATH/bin:$PATH
-EOF
-source ~/.bash_profile
-```
+First, download and install go from <https://go.dev/dl/>
 
 Fetch source and build both the client and the server (the `...` is not a typo), can be re-run to fetch updates:
 
 ```bash
-go get -u github.com/continusec/geecert/cmd/...
+go install github.com/continusec/geecert/cmd/...@latest
 ```
 
 Verify binaries are built:
 
 ```bash
-ls $GOPATH/bin
+ls $HOME/go/bin
 ```
 
 Shows:
@@ -44,14 +36,13 @@ Shows:
 If you make any changes to `sso.proto`, run the following to re-generate new Go code (assumes that [protoc](https://github.com/google/protobuf/releases) is installed):
 
 ```bash
-cd $GOPATH/src/github.com/continusec/geecert
-go generate
+make generate
 ```
 
 To build and install new server and client after changing Go source, run:
 
 ```bash
-go install github.com/continusec/geecert/cmd/...
+make
 ```
 
 ## SSO Server
