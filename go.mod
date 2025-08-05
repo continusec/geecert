@@ -3,7 +3,7 @@ module github.com/continusec/geecert
 go 1.23.2
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.2.3
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/hydrogen18/stoppableListener v0.0.0-20161101122645-827d760f0663
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c

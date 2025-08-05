@@ -1,7 +1,5 @@
-# github.com/golang-jwt/jwt v3.2.2+incompatible
-## explicit
-# github.com/golang-jwt/jwt/v5 v5.2.3
-## explicit; go 1.18
+# github.com/golang-jwt/jwt/v5 v5.3.0
+## explicit; go 1.21
 github.com/golang-jwt/jwt/v5
 # github.com/hydrogen18/stoppableListener v0.0.0-20161101122645-827d760f0663
 ## explicit
